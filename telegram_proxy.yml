@@ -1,0 +1,26 @@
+name: Telegram Proxy Collector
+on:
+  schedule:
+    - cron: "0 */4 * * *" # هر ۴ ساعت یک‌بار، یعنی ۶ بار در روز
+  workflow_dispatch: # امکان اجرای دستی با یک کلیک
+permissions:
+  contents: read
+jobs:
+  collect-and-send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install aiohttp
+      - name: Run Proxy Collector
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python proxy_collector.py
