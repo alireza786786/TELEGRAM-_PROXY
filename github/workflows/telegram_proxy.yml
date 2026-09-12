@@ -4,8 +4,8 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '0 */4 *每 * *' # هر ۴ ساعت یک‌بار
-  workflow_dispatch: # اجازه اجرای دستی از طریق دکمه Run workflow
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # این خط برای نمایش دکمه Run الزامی است
 
 jobs:
   build:
