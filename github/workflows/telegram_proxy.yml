@@ -5,7 +5,7 @@ on:
     branches: [ main ]
   schedule:
     - cron: '0 */4 * * *'
-  workflow_dispatch: # این خط برای نمایش دکمه Run الزامی است
+  workflow_dispatch:
 
 jobs:
   build:
