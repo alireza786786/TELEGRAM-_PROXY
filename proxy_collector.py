@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/init/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 Telegram Proxy Collector v1.0
-جمع‌آوری، حذف تکراری و ارسال خودکار پروکسی‌های MTProto تلگرام به کانال همراه با دکمه شیشه‌ای.
+🚀 Telegram Proxy Collector v2.0
+جمع‌آوری، تست سرعت (پینگ واقعی)، مرتب‌سازی، ارسال فایل و ۳ پروکسی برتر با دکمه شیشه‌ای و قابلیت پین خودکار.
 """
 
 import asyncio
@@ -35,17 +35,18 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
 
 FETCH_TIMEOUT = 10.0
-TCP_TIMEOUT = 4.0
+TCP_TIMEOUT = 3.0
 MAX_CONCURRENT_TESTS = 60
 
 PROXY_RE = re.compile(r"(?:https?://t\.me|tg://)/?(?:proxy)?\?[^\s'\"<>]+")
 
-@dataclass(frozen=True)
+@dataclass
 class ProxyLink:
     server: str
     port: int
     secret: str
     raw: str
+    latency: float = 999.0  # سرعت پاسخ‌دهی (پینگ)
 
 def parse_proxy_line(line: str) -> Optional[ProxyLink]:
     line = line.strip()
@@ -100,15 +101,19 @@ async def collect_all() -> List[ProxyLink]:
             proxies.append(p)
     return proxies
 
-async def tcp_alive(host: str, port: int, sem: asyncio.Semaphore) -> bool:
+async def measure_latency(p: ProxyLink, sem: asyncio.Semaphore) -> Optional[ProxyLink]:
+    """تست TCP همراه با محاسبه دقیق سرعت (Latency)"""
     async with sem:
+        start_time = asyncio.get_event_loop().time()
         writer = None
         try:
-            fut = asyncio.open_connection(host, port)
+            fut = asyncio.open_connection(p.server, p.port)
             _, writer = await asyncio.wait_for(fut, timeout=TCP_TIMEOUT)
-            return True
+            end_time = asyncio.get_event_loop().time()
+            p.latency = round((end_time - start_time) * 1000, 2)  # تبدیل به میلی‌ثانیه
+            return p
         except Exception:
-            return False
+            return None
         finally:
             if writer is not None:
                 try:
@@ -117,10 +122,13 @@ async def tcp_alive(host: str, port: int, sem: asyncio.Semaphore) -> bool:
                 except Exception:
                     pass
 
-async def filter_alive(proxies: List[ProxyLink]) -> List[ProxyLink]:
+async def filter_and_sort_alive(proxies: List[ProxyLink]) -> List[ProxyLink]:
     sem = asyncio.Semaphore(MAX_CONCURRENT_TESTS)
-    results = await asyncio.gather(*[tcp_alive(p.server, p.port, sem) for p in proxies])
-    return [p for p, ok in zip(proxies, results) if ok]
+    results = await asyncio.gather(*[measure_latency(p, sem) for p in proxies])
+    # فیلتر پروکسی‌های سالم و مرتب‌سازی آن‌ها بر اساس کمترین پینگ (سریع‌ترین‌ها در ابتدا)
+    alive_proxies = [p for p in results if p is not None]
+    alive_proxies.sort(key=lambda x: x.latency)
+    return alive_proxies
 
 async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
     if not BOT_TOKEN or not CHAT_ID:
@@ -129,7 +137,6 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
 
     count = len(proxies)
     
-    # ارسال فایل سابسکرایب به همراه کپشن کلی
     caption = (
         "📡 <b>پروکسی‌های MTProto تلگرام</b>\n\n"
         f"📦 تعداد کل پروکسی‌های زنده: <b>{count}</b>\n"
@@ -139,10 +146,11 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
 
     url_doc = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
     url_msg = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    url_pin = f"https://api.telegram.org/bot{BOT_TOKEN}/pinChatMessage"
 
     try:
         async with aiohttp.ClientSession() as session:
-            # ۱. ارسال فایل
+            # ۱. ارسال فایل سابسکرایب
             with open(file_path, "rb") as f:
                 data = aiohttp.FormData()
                 data.add_field("chat_id", CHAT_ID)
@@ -157,22 +165,19 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
                     res = await r.json()
                     if res.get("ok"):
                         print("✅ فایل پروکسی‌ها با موفقیت به تلگرام ارسال شد.")
-                    else:
-                        print(f"❌ خطای ارسال فایل: {res.get('description')}")
 
-            # ۲. انتخاب ۳ پروکسی رندم و ساخت دکمه‌های شیشه‌ای اتصال مستقیم
+            # ۲. انتخاب ۳ پروکسی برتر و سریع‌تر برای دکمه‌های شیشه‌ای
             if proxies:
-                sample_count = min(3, len(proxies))
-                selected_proxies = random.sample(proxies, sample_count)
+                # ۳ پروکسی اول از لیست مرتب‌شده، سریع‌ترین‌ها هستند
+                top_proxies = proxies[:3]
                 
                 inline_keyboard = []
-                text_lines = ["🔗 <b>چند نمونه پروکسی اتصال سریع:</b>\n"]
+                text_lines = ["🚀 <b>۳ پروکسی فوق‌سریع برتر (تست‌شده):</b>\n"]
                 
-                for i, p in enumerate(selected_proxies, 1):
-                    text_lines.append(f"پروکسی شماره {i}:\n<code>{p.raw}</code>\n")
-                    # ساخت دکمه شیشه‌ای با قابلیت لینک مستقیم (URL) به پروکسی
+                for i, p in enumerate(top_proxies, 1):
+                    text_lines.append(f"پروکسی {i} (پینگ: {p.latency}ms):\n<code>{p.raw}</code>\n")
                     inline_keyboard.append([
-                        {"text": f"🚀 اتصال به پروکسی {i}", "url": p.raw}
+                        {"text": f"⚡ اتصال سریع به پروکسی {i} ({int(p.latency)}ms)", "url": p.raw}
                     ])
 
                 payload = {
@@ -187,7 +192,21 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
                 async with session.post(url_msg, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as r:
                     res = await r.json()
                     if res.get("ok"):
-                        print("✅ پیام همراه با ۳ دکمه شیشه‌ای پروکسی ارسال شد.")
+                        print("✅ پیام همراه با ۳ دکمه شیشه‌ای پرسرعت ارسال شد.")
+                        
+                        # ۳. پین کردن خودکار پیام دکمه‌دار در کانال
+                        message_id = res["result"]["message_id"]
+                        pin_payload = {
+                            "chat_id": CHAT_ID,
+                            "message_id": message_id,
+                            "disable_notification": False
+                        }
+                        async with session.post(url_pin, json=pin_payload, timeout=aiohttp.ClientTimeout(total=15)) as pin_res:
+                            pin_json = await pin_res.json()
+                            if pin_json.get("ok"):
+                                print("📌 پیام پروکسی‌های برتر با موفقیت در کانال پین شد.")
+                            else:
+                                print(f"⚠️ امکان پین کردن پیام نبود (ربات باید دسترسی Pin Messages داشته باشد): {pin_json.get('description')}")
                     else:
                         print(f"❌ خطای ارسال پیام دکمه‌دار: {res.get('description')}")
 
@@ -196,14 +215,15 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
 
 async def main() -> None:
     print("=" * 60)
-    print("🚀 Telegram Proxy Collector — شروع")
+    print("🚀 Telegram Proxy Collector v2.0 — شروع")
     print("=" * 60)
 
     all_proxies = await collect_all()
     print(f"📥 {len(all_proxies)} پروکسی یکتا جمع‌آوری شد.")
 
-    alive = await filter_alive(all_proxies)
-    print(f"🧪 {len(alive)} پروکسی زنده تأیید شد.")
+    # تست و مرتب‌سازی هوشمند بر اساس سرعت (پینگ)
+    alive = await filter_and_sort_alive(all_proxies)
+    print(f"🧪 {len(alive)} پروکسی زنده تأیید و بر اساس سرعت مرتب شدند.")
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(p.raw for p in alive))
