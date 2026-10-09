@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 Telegram Proxy Collector v2.1 (بهبود یافته)
-جمع‌آوری، تست سرعت (پینگ واقعی)، مرتب‌سازی، ارسال فایل و ۳ پروکسی برتر با دکمه شیشه‌ای و قابلیت پین خودکار.
-
-بهبودها:
-- مدیریت خطا و Exception‌ها بهتر
-- Logging جامع و دقیق
-- Retry mechanism برای شبکه‌های ناپایدار
-- Validation بهتر متغیرهای محیطی
-- Performance optimization
+🚀 Telegram Proxy Collector v3.0 (نسخه پیشرفته)
+جمع‌آوری پروکسی از سورس‌های مخفی، ارسال پست تصویری با هایپرلینک، پین خودکار و ارسال فایل.
 """
 
 import asyncio
 import os
 import re
 import sys
+import random
 import logging
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
@@ -27,7 +21,6 @@ import aiohttp
 
 # ==================== تنظیم Logging ====================
 def setup_logging():
-    """تنظیم سیستم logging جامع"""
     log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     logging.basicConfig(
         level=logging.INFO,
@@ -41,27 +34,17 @@ def setup_logging():
 
 logger = setup_logging()
 
-# ==================== تنظیمات ====================
-SOURCES = [
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no1.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no2.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no3.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no4.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no5.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no6.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no7.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no8.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no9.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no10.txt",
-]
-
-OUTPUT_FILE = "TELEGRAM_PROXY_SUB_TXT"
-CHANNEL_LINK = "https://t.me/Goodbaye_filtering"
-
+# ==================== خواندن تنظیمات از متغیرهای مخفی ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("CHAT_ID", "").strip()
+SOURCES_ENV = os.environ.get("PROXY_SOURCES", "").strip()
 
-# تنظیمات شبکه و Timeout (برای شبکه‌های ناپایدار مثل اینترنت ایران)
+# تبدیل سورس‌های مخفی به لیست
+SOURCES = [line.strip() for line in SOURCES_ENV.splitlines() if line.strip() and not line.strip().startswith("#")]
+
+OUTPUT_FILE = "TELEGRAM_PROXY_SUB_TXT"
+CHANNEL_ID = "@Goodbaye_filtering"  # آیدی کانال شما
+
 FETCH_TIMEOUT = 15.0
 TCP_TIMEOUT = 5.0
 MAX_CONCURRENT_TESTS = 40
@@ -70,33 +53,31 @@ RETRY_DELAY = 2.0
 
 PROXY_RE = re.compile(r"(?:https?://t\.me|tg://)/?(?:proxy)?\?[^\s'\"<>]+")
 
+# ==================== بانک متن‌های جذاب، شعر و دانستنی ====================
+POST_TEXTS = [
+    "✨ «امید، نوری است که حتی در تاریک‌ترین شب‌ها مسیر را روشن می‌کند.»",
+    "🌌 «هر مانعی در مسیر، دعوتی است برای قوی‌تر شدن و پرواز بالاتر.»",
+    "🌿 «صبور باش؛ قشنگ‌ترین گل‌ها در دل سنگ سخت و در سکوت رشد می‌کنند.»",
+    "🔭 جالب است بدانید: کهکشان راه شیری با سرعتی حدود ۲ میلیون کیلومتر در ساعت در حال حرکت در کیهان است!",
+    "📖 «در نومیدی بسی امید است / پایان شب سیه سپید است»",
+    "💫 «جهان متعلق به کسانی است که به زیبایی رویاهایشان باور دارند.»",
+    "🪐 جالب است بدانید: یک روز در سیاره زهره، طولانی‌تر از یک سال در همان سیاره است!",
+    "🌊 «آرامش، هنر رها کردن چیزهایی است که تحت کنترل تو نیستند.»",
+    "🚀 «شجاعت به معنای نترسیدن نیست؛ شجاعت یعنی با وجود ترس، رو به جلو قدم برداشتن.»",
+    "🕊️ «بزرگ‌ترین افتخار این نیست که هرگز زمین نخوریم، بلکه این است که هر بار برخیزیم.»"
+]
 
-# ==================== Validation ====================
-def validate_environment():
-    """بررسی صحت متغیرهای محیطی"""
-    logger.info("🔍 بررسی متغیرهای محیطی...")
-    
-    if not BOT_TOKEN:
-        logger.warning("⚠️ BOT_TOKEN تنظیم نشده است. پیام‌ها به تلگرام ارسال نخواهند شد.")
-        return False
-    
-    if not CHAT_ID:
-        logger.warning("⚠️ CHAT_ID تنظیم نشده است. پیام‌ها به تلگرام ارسال نخواهند شد.")
-        return False
-    
-    logger.info("✅ متغیرهای محیطی بررسی شدند.")
-    return True
+RANDOM_IMAGE_URL = "https://picsum.photos/1080/720"
 
 
 # ==================== Data Classes ====================
 @dataclass
 class ProxyLink:
-    """کلاس برای نمایندگی پروکسی"""
     server: str
     port: int
     secret: str
     raw: str
-    latency: float = 999.0  # سرعت پاسخ‌دهی (پینگ) به میلی‌ثانیه
+    latency: float = 999.0
 
     def __hash__(self):
         return hash((self.server, self.port, self.secret))
@@ -109,88 +90,63 @@ class ProxyLink:
 
 # ==================== Parsing ====================
 def parse_proxy_line(line: str) -> Optional[ProxyLink]:
-    """تجزیه خط پروکسی و استخراج اطلاعات"""
     line = line.strip()
     if not line:
         return None
-    
     try:
         m = PROXY_RE.search(line)
         if not m:
             return None
-        
         url = m.group(0)
         normalized = url if url.startswith("http") else "https://t.me/proxy" + url[url.index("?"):]
         parsed = urlparse(normalized)
         qs = parse_qs(parsed.query)
-        
+
         server = (qs.get("server", [""])[0] or "").strip().rstrip(".").lower()
         port_raw = (qs.get("port", [""])[0] or "").strip()
         secret = (qs.get("secret", [""])[0] or "").strip()
-        
+
         if not server or not port_raw.isdigit() or not secret:
             return None
-        
+
         port = int(port_raw)
         if not (0 < port < 65536):
             return None
-        
+
         clean_url = f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
         return ProxyLink(server=server, port=port, secret=secret, raw=clean_url)
-    
-    except Exception as e:
-        logger.debug(f"خطا در تجزیه خط: {line[:50]}... - {e}")
+    except Exception:
         return None
 
 
-# ==================== Fetching with Retry ====================
+# ==================== Fetching ====================
 async def fetch_source(session: aiohttp.ClientSession, url: str, retries: int = MAX_RETRIES) -> List[str]:
-    """دریافت منبع با retry mechanism برای شبکه‌های ناپایدار"""
     for attempt in range(retries):
         try:
-            logger.info(f"📥 درحال دریافت از {url} (تلاش {attempt + 1}/{retries})...")
-            
             async with session.get(
                 url,
                 timeout=aiohttp.ClientTimeout(total=FETCH_TIMEOUT),
-                ssl=False  # برای شبکه‌های ناپایدار مثل ایران
+                ssl=False
             ) as r:
                 if r.status != 200:
-                    logger.warning(f"⚠️ وضعیت HTTP {r.status} برای {url}")
                     if attempt < retries - 1:
                         await asyncio.sleep(RETRY_DELAY)
                     continue
-                
                 text = await r.text(errors="ignore")
-                lines = text.splitlines()
-                logger.info(f"✅ {len(lines)} خط از {url} دریافت شد")
-                return lines
-        
-        except asyncio.TimeoutError:
-            logger.warning(f"⏱ Timeout برای {url} (تلاش {attempt + 1}/{retries})")
+                return text.splitlines()
+        except Exception:
             if attempt < retries - 1:
                 await asyncio.sleep(RETRY_DELAY)
-        except Exception as e:
-            logger.warning(f"❌ خطا در دریافت {url}: {e} (تلاش {attempt + 1}/{retries})")
-            if attempt < retries - 1:
-                await asyncio.sleep(RETRY_DELAY)
-    
     return []
 
 
 async def collect_all() -> List[ProxyLink]:
-    """جمع‌آوری تمام پروکسی‌ها از منابع"""
-    logger.info("=" * 60)
-    logger.info("🚀 شروع جمع‌آوری پروکسی‌ها")
-    logger.info("=" * 60)
-    
-    connector = aiohttp.TCPConnector(
-        limit_per_host=5,
-        limit=100,
-        ttl_dns_cache=300,
-        ssl=False
-    )
-    
+    if not SOURCES:
+        logger.error("❌ هیچ لینکی در متغیر PROXY_SOURCES تعریف نشده است!")
+        return []
+
+    logger.info(f"🚀 دریافت پروکسی‌ها از {len(SOURCES)} منبع مخفی...")
+    connector = aiohttp.TCPConnector(limit_per_host=5, limit=100, ssl=False)
     async with aiohttp.ClientSession(connector=connector) as session:
         all_lines = await asyncio.gather(
             *[fetch_source(session, u) for u in SOURCES],
@@ -199,31 +155,26 @@ async def collect_all() -> List[ProxyLink]:
 
     seen: Set[Tuple[str, int, str]] = set()
     proxies: List[ProxyLink] = []
-    
-    for i, lines in enumerate(all_lines):
-        if isinstance(lines, Exception):
-            logger.error(f"❌ خطا در دریافت منبع {i+1}: {lines}")
+
+    for lines in all_lines:
+        if isinstance(lines, Exception) or not lines:
             continue
-        
         for line in lines:
             p = parse_proxy_line(line)
             if not p:
                 continue
-            
             key = (p.server, p.port, p.secret)
             if key in seen:
                 continue
-            
             seen.add(key)
             proxies.append(p)
-    
-    logger.info(f"✅ {len(proxies)} پروکسی یکتا جمع‌آوری شد")
+
+    logger.info(f"✅ {len(proxies)} پروکسی یکتا استخراج شد")
     return proxies
 
 
 # ==================== Testing ====================
 async def measure_latency(p: ProxyLink, sem: asyncio.Semaphore) -> Optional[ProxyLink]:
-    """تست TCP و محاسبه latency دقیق"""
     async with sem:
         start_time = asyncio.get_event_loop().time()
         writer = None
@@ -232,14 +183,8 @@ async def measure_latency(p: ProxyLink, sem: asyncio.Semaphore) -> Optional[Prox
             _, writer = await asyncio.wait_for(fut, timeout=TCP_TIMEOUT)
             end_time = asyncio.get_event_loop().time()
             p.latency = round((end_time - start_time) * 1000, 2)
-            logger.debug(f"✅ {p.server}:{p.port} - Latency: {p.latency}ms")
             return p
-        
-        except asyncio.TimeoutError:
-            logger.debug(f"⏱ {p.server}:{p.port} - Timeout")
-            return None
-        except Exception as e:
-            logger.debug(f"❌ {p.server}:{p.port} - {type(e).__name__}: {e}")
+        except Exception:
             return None
         finally:
             if writer is not None:
@@ -251,200 +196,141 @@ async def measure_latency(p: ProxyLink, sem: asyncio.Semaphore) -> Optional[Prox
 
 
 async def filter_and_sort_alive(proxies: List[ProxyLink]) -> List[ProxyLink]:
-    """فیلتر پروکسی‌های سالم و مرتب‌سازی بر اساس سرعت"""
-    logger.info(f"🧪 شروع تست {len(proxies)} پروکسی...")
-    
+    logger.info(f"🧪 شروع بررسی {len(proxies)} پروکسی...")
     sem = asyncio.Semaphore(MAX_CONCURRENT_TESTS)
     results = await asyncio.gather(*[measure_latency(p, sem) for p in proxies])
-    
-    alive_proxies = [p for p in results if p is not None]
-    alive_proxies.sort(key=lambda x: x.latency)
-    
-    logger.info(f"✅ {len(alive_proxies)} پروکسی زنده تأیید شد")
-    
-    if alive_proxies:
-        logger.info(f"🏆 سریع‌ترین پروکسی: {alive_proxies[0].server} (Latency: {alive_proxies[0].latency}ms)")
-    
-    return alive_proxies
+    alive = [p for p in results if p is not None]
+    alive.sort(key=lambda x: x.latency)
+    logger.info(f"✅ {len(alive)} پروکسی فعال و پاسخ‌گو تایید شد")
+    return alive
 
 
 # ==================== File Operations ====================
 async def save_proxies_to_file(file_path: str, proxies: List[ProxyLink]) -> bool:
-    """ذخیره پروکسی‌ها در فایل"""
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write("\n".join(p.raw for p in proxies))
-        
-        logger.info(f"💾 {len(proxies)} پروکسی در فایل «{file_path}» ذخیره شدند")
         return True
-    
     except Exception as e:
         logger.error(f"❌ خطا در ذخیره فایل: {e}")
         return False
 
 
-# ==================== Telegram Sending ====================
-async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
-    """ارسال پروکسی‌ها و اطلاعات به تلگرام"""
-    if not BOT_TOKEN or not CHAT_ID:
-        logger.warning("⚠️ BOT_TOKEN یا CHAT_ID تنظیم نشده است. پیام ارسال نخواهد شد.")
-        return
+# ==================== ساخت متن هایپرلینک ====================
+def build_caption_with_hyperlinks(top_proxies: List[ProxyLink]) -> str:
+    """ایجاد پیام با تصویر و هایپرلینک‌های آبی مانند الگوی ارسالی شما"""
+    motivational_text = random.choice(POST_TEXTS)
 
-    if not Path(file_path).exists():
-        logger.error(f"❌ فایل «{file_path}» وجود ندارد.")
-        return
-
-    count = len(proxies)
-    logger.info(f"📤 درحال ارسال {count} پروکسی به تلگرام...")
+    # چیدمان پروکسی‌ها به صورت ۲ تایی و ۳ تایی
+    hyperlink_tags = [f'<a href="{p.raw}">پروکسی</a>' for p in top_proxies]
     
-    caption = (
-        "📡 <b>پروکسی‌های MTProto تلگرام</b>\n\n"
-        f"📦 تعداد کل پروکسی‌های زنده: <b>{count}</b>\n"
-        f"⏱ تاریخ به‌روزرسانی: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        "🔄 هر ۴ ساعت یک‌بار به‌روزرسانی می‌شود\n\n"
-        f"✨ منبع: {CHANNEL_LINK}"
-    )
+    rows = []
+    i = 0
+    # ردیف اول: ۲ تایی
+    if len(hyperlink_tags) >= 2:
+        rows.append(" | ".join(hyperlink_tags[0:2]))
+        i = 2
 
+    # ردیف‌های بعدی: ۳ تایی
+    while i < len(hyperlink_tags):
+        chunk = hyperlink_tags[i:i+3]
+        rows.append(" | ".join(chunk))
+        i += 3
+
+    proxies_section = "\n".join(rows)
+
+    caption = (
+        f"{motivational_text}\n\n"
+        f"{proxies_section}\n\n"
+        f"🔥 {CHANNEL_ID}"
+    )
+    return caption
+
+
+# ==================== ارسال به تلگرام ====================
+async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
+    if not BOT_TOKEN or not CHAT_ID:
+        logger.warning("⚠️ اطلاعات BOT_TOKEN یا CHAT_ID موجود نیست.")
+        return
+
+    logger.info("📤 درحال ارسال پست و فایل به تلگرام...")
+    url_photo = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     url_doc = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-    url_msg = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     url_pin = f"https://api.telegram.org/bot{BOT_TOKEN}/pinChatMessage"
 
     try:
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
-            # ۱. ارسال فایل
-            with open(file_path, "rb") as f:
-                data = aiohttp.FormData()
-                data.add_field("chat_id", CHAT_ID)
-                data.add_field("caption", caption)
-                data.add_field("parse_mode", "HTML")
-                data.add_field(
-                    "document", f,
-                    filename=os.path.basename(file_path),
-                    content_type="text/plain",
+            # ۱. انتخاب ۱۲ تا ۱۴ پروکسی اول (سریع‌ترین‌ها) برای چیدمان هایپرلینک
+            top_proxies = proxies[:14]
+            caption = build_caption_with_hyperlinks(top_proxies)
+
+            # ارسال عکس همراه با کپشن هایپرلینک
+            photo_payload = {
+                "chat_id": CHAT_ID,
+                "photo": RANDOM_IMAGE_URL,
+                "caption": caption,
+                "parse_mode": "HTML"
+            }
+
+            async with session.post(url_photo, json=photo_payload, timeout=aiohttp.ClientTimeout(total=30)) as r:
+                res = await r.json()
+                if res.get("ok"):
+                    logger.info("✅ پست تصویری هایپرلینک با موفقیت ارسال شد")
+                    message_id = res["result"]["message_id"]
+
+                    # پین کردن پست
+                    pin_payload = {"chat_id": CHAT_ID, "message_id": message_id}
+                    async with session.post(url_pin, json=pin_payload, timeout=aiohttp.ClientTimeout(total=15)) as pin_res:
+                        pin_json = await pin_res.json()
+                        if pin_json.get("ok"):
+                            logger.info("📌 پست با موفقیت پین شد")
+                else:
+                    logger.error(f"❌ خطا در ارسال عکس: {res.get('description')}")
+
+            # ۲. ارسال فایل کامل سابسکرایب پروکسی‌ها
+            if Path(file_path).exists():
+                file_caption = (
+                    f"📦 <b>فایل کامل پروکسی‌های فعال</b>\n"
+                    f"📊 تعداد کل: <b>{len(proxies)}</b>\n"
+                    f"⏱ تاریخ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    f"✨ {CHANNEL_ID}"
                 )
-                
-                try:
-                    async with session.post(
-                        url_doc,
-                        data=data,
-                        timeout=aiohttp.ClientTimeout(total=30)
-                    ) as r:
-                        res = await r.json()
-                        if res.get("ok"):
-                            logger.info("✅ فایل پروکسی‌ها با موفقیت ارسال شد")
-                        else:
-                            logger.error(f"❌ خطای ارسال فایل: {res.get('description')}")
-                except Exception as e:
-                    logger.error(f"❌ خطا در ارسال فایل: {e}")
+                with open(file_path, "rb") as f:
+                    data = aiohttp.FormData()
+                    data.add_field("chat_id", CHAT_ID)
+                    data.add_field("caption", file_caption)
+                    data.add_field("parse_mode", "HTML")
+                    data.add_field("document", f, filename="TELEGRAM_PROXIES.txt")
 
-            # ۲. ارسال ۳ پروکسی برتر با دکمه‌ها
-            if proxies:
-                top_proxies = proxies[:3]
-                
-                inline_keyboard = []
-                text_lines = ["🚀 <b>۳ پروکسی فوق‌سریع برتر (تست‌شده):</b>\n"]
-                
-                for i, p in enumerate(top_proxies, 1):
-                    text_lines.append(f"<b>پروکسی {i}</b> (پینگ: <b>{p.latency}ms</b>)\n<code>{p.raw}</code>\n")
-                    inline_keyboard.append([
-                        {"text": f"⚡ {i} ({int(p.latency)}ms)", "url": p.raw}
-                    ])
-
-                payload = {
-                    "chat_id": CHAT_ID,
-                    "text": "\n".join(text_lines),
-                    "parse_mode": "HTML",
-                    "reply_markup": {"inline_keyboard": inline_keyboard}
-                }
-
-                try:
-                    async with session.post(
-                        url_msg,
-                        json=payload,
-                        timeout=aiohttp.ClientTimeout(total=30)
-                    ) as r:
-                        res = await r.json()
-                        if res.get("ok"):
-                            logger.info("✅ پیام همراه با ۳ دکمه پرسرعت ارسال شد")
-                            
-                            # ۳. پین خودکار پیام
-                            message_id = res["result"]["message_id"]
-                            pin_payload = {
-                                "chat_id": CHAT_ID,
-                                "message_id": message_id,
-                                "disable_notification": False
-                            }
-                            
-                            try:
-                                async with session.post(
-                                    url_pin,
-                                    json=pin_payload,
-                                    timeout=aiohttp.ClientTimeout(total=15)
-                                ) as pin_res:
-                                    pin_json = await pin_res.json()
-                                    if pin_json.get("ok"):
-                                        logger.info("📌 پیام با موفقیت پین شد")
-                                    else:
-                                        logger.warning(f"⚠️ امکان پین کردن نبود: {pin_json.get('description')}")
-                            except Exception as e:
-                                logger.warning(f"⚠️ خطا در پین کردن: {e}")
-                        else:
-                            logger.error(f"❌ خطای ارسال پیام: {res.get('description')}")
-                except Exception as e:
-                    logger.error(f"❌ خطا در ارسال پیام: {e}")
+                    async with session.post(url_doc, data=data, timeout=aiohttp.ClientTimeout(total=40)) as doc_r:
+                        doc_res = await doc_r.json()
+                        if doc_res.get("ok"):
+                            logger.info("✅ فایل کلی پروکسی‌ها با موفقیت ارسال شد")
 
     except Exception as e:
-        logger.error(f"❌ خطا در ارتباط با تلگرام: {e}")
+        logger.error(f"❌ خطا در فرآیند ارسال تلگرام: {e}")
 
 
 # ==================== Main ====================
 async def main() -> None:
-    """تابع اصلی"""
-    logger.info("\n" + "=" * 60)
-    logger.info("🚀 Telegram Proxy Collector v2.1 - شروع")
-    logger.info("=" * 60 + "\n")
-    
-    # بررسی محیط
-    has_telegram = validate_environment()
-    
-    try:
-        # جمع‌آوری پروکسی‌ها
-        all_proxies = await collect_all()
-        
-        if not all_proxies:
-            logger.error("❌ هیچ پروکسی جمع‌آوری نشد!")
-            return
-        
-        # تست و مرتب‌سازی
-        alive = await filter_and_sort_alive(all_proxies)
-        
-        if not alive:
-            logger.error("❌ هیچ پروکسی سالم پیدا نشد!")
-            return
-        
-        # ذخیره در فایل
-        if not await save_proxies_to_file(OUTPUT_FILE, alive):
-            return
-        
-        # ارسال به تلگرام
-        if has_telegram:
-            await send_to_telegram(OUTPUT_FILE, alive)
-        
-        logger.info("\n" + "=" * 60)
-        logger.info("✅ فرآیند با موفقیت به پایان رسید")
-        logger.info("=" * 60 + "\n")
-    
-    except Exception as e:
-        logger.error(f"❌ خطای غیرمنتظره: {e}", exc_info=True)
-        sys.exit(1)
+    all_proxies = await collect_all()
+    if not all_proxies:
+        return
+
+    alive = await filter_and_sort_alive(all_proxies)
+    if not alive:
+        return
+
+    if await save_proxies_to_file(OUTPUT_FILE, alive):
+        await send_to_telegram(OUTPUT_FILE, alive)
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("\n⚠️ برنامه توقف یافت (Ctrl+C)")
+        logger.info("توقف برنامه")
     except Exception as e:
-        logger.error(f"❌ خطای بحرانی: {e}", exc_info=True)
+        logger.error(f"خطا: {e}", exc_info=True)
         sys.exit(1)
