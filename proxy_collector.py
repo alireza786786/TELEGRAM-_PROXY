@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 Telegram Proxy Collector v3.0 (نسخه پیشرفته)
-جمع‌آوری پروکسی از سورس‌های مخفی، ارسال پست تصویری با هایپرلینک، پین خودکار و ارسال فایل.
+🚀 Telegram Proxy Collector v3.1
+جمع‌آوری، تست و ارسال پروکسی به همراه ساعت تهران، تاریخ شمسی و میلادی
 """
 
 import asyncio
@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from typing import List, Optional, Set, Tuple
 from urllib.parse import urlparse, parse_qs
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import aiohttp
@@ -39,11 +39,12 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("CHAT_ID", "").strip()
 SOURCES_ENV = os.environ.get("PROXY_SOURCES", "").strip()
 
-# تبدیل سورس‌های مخفی به لیست
 SOURCES = [line.strip() for line in SOURCES_ENV.splitlines() if line.strip() and not line.strip().startswith("#")]
 
 OUTPUT_FILE = "TELEGRAM_PROXY_SUB_TXT"
-CHANNEL_ID = "@Goodbaye_filtering"  # آیدی کانال شما
+CHANNEL_ID = "@Goodbaye_filtering"
+CHANNEL_LINK = "https://t.me/Goodbaye_filtering"
+GROUP_LINK = "https://t.me/CONFIG_V2RAY_VIP"
 
 FETCH_TIMEOUT = 15.0
 TCP_TIMEOUT = 5.0
@@ -53,7 +54,6 @@ RETRY_DELAY = 2.0
 
 PROXY_RE = re.compile(r"(?:https?://t\.me|tg://)/?(?:proxy)?\?[^\s'\"<>]+")
 
-# ==================== بانک متن‌های جذاب، شعر و دانستنی ====================
 POST_TEXTS = [
     "✨ «امید، نوری است که حتی در تاریک‌ترین شب‌ها مسیر را روشن می‌کند.»",
     "🌌 «هر مانعی در مسیر، دعوتی است برای قوی‌تر شدن و پرواز بالاتر.»",
@@ -68,6 +68,48 @@ POST_TEXTS = [
 ]
 
 RANDOM_IMAGE_URL = "https://picsum.photos/1080/720"
+
+
+# ==================== تبدیل تاریخ به شمسی ====================
+def gregorian_to_jalali(gy: int, gm: int, gd: int) -> Tuple[int, int, int]:
+    """تبدیل تقویم میلادی به شمسی بدون نیاز به کتابخانه جانبی"""
+    g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+    if gy > 1600:
+        jy = 979
+        gy -= 1600
+    else:
+        jy = 0
+        gy -= 621
+    gy2 = gy if gm > 2 else gy - 1
+    days = (365 * gy) + ((gy2 + 4) // 4) - ((gy2 + 100) // 100) + ((gy2 + 400) // 400) - 80 + gd + g_d_m[gm - 1]
+    jy += 33 * (days // 12053)
+    days %= 12053
+    jy += 4 * (days // 1461)
+    days %= 1461
+    if days > 365:
+        jy += (days - 1) // 365
+        days = (days - 1) % 365
+    if days < 186:
+        jm = 1 + (days // 31)
+        jd = 1 + (days % 31)
+    else:
+        jm = 7 + ((days - 186) // 30)
+        jd = 1 + ((days - 186) % 30)
+    return jy, jm, jd
+
+
+def get_tehran_date_and_time():
+    """محاسبه دقیق ساعت به وقت تهران، تاریخ شمسی و میلادی"""
+    tehran_tz = timezone(timedelta(hours=3, minutes=30))
+    now = datetime.now(tehran_tz)
+    
+    time_str = now.strftime("%H:%M:%S")
+    gregorian_str = now.strftime("%Y/%m/%d")
+    
+    jy, jm, jd = gregorian_to_jalali(now.year, now.month, now.day)
+    jalali_str = f"{jy:04d}/{jm:02d}/{jd:02d}"
+    
+    return time_str, jalali_str, gregorian_str
 
 
 # ==================== Data Classes ====================
@@ -216,22 +258,17 @@ async def save_proxies_to_file(file_path: str, proxies: List[ProxyLink]) -> bool
         return False
 
 
-# ==================== ساخت متن هایپرلینک ====================
+# ==================== ساخت متن هایپرلینک پست تصویری ====================
 def build_caption_with_hyperlinks(top_proxies: List[ProxyLink]) -> str:
-    """ایجاد پیام با تصویر و هایپرلینک‌های آبی مانند الگوی ارسالی شما"""
     motivational_text = random.choice(POST_TEXTS)
-
-    # چیدمان پروکسی‌ها به صورت ۲ تایی و ۳ تایی
     hyperlink_tags = [f'<a href="{p.raw}">پروکسی</a>' for p in top_proxies]
     
     rows = []
     i = 0
-    # ردیف اول: ۲ تایی
     if len(hyperlink_tags) >= 2:
         rows.append(" | ".join(hyperlink_tags[0:2]))
         i = 2
 
-    # ردیف‌های بعدی: ۳ تایی
     while i < len(hyperlink_tags):
         chunk = hyperlink_tags[i:i+3]
         rows.append(" | ".join(chunk))
@@ -242,7 +279,8 @@ def build_caption_with_hyperlinks(top_proxies: List[ProxyLink]) -> str:
     caption = (
         f"{motivational_text}\n\n"
         f"{proxies_section}\n\n"
-        f"🔥 {CHANNEL_ID}"
+        f"🔥 {CHANNEL_ID}\n"
+        f"💬 <a href=\"{GROUP_LINK}\">سوپرگروه ما</a>"
     )
     return caption
 
@@ -261,11 +299,10 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
     try:
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
-            # ۱. انتخاب ۱۲ تا ۱۴ پروکسی اول (سریع‌ترین‌ها) برای چیدمان هایپرلینک
+            # ۱. ارسال پست عکس با هایپرلینک‌ها
             top_proxies = proxies[:14]
             caption = build_caption_with_hyperlinks(top_proxies)
 
-            # ارسال عکس همراه با کپشن هایپرلینک
             photo_payload = {
                 "chat_id": CHAT_ID,
                 "photo": RANDOM_IMAGE_URL,
@@ -276,26 +313,35 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
             async with session.post(url_photo, json=photo_payload, timeout=aiohttp.ClientTimeout(total=30)) as r:
                 res = await r.json()
                 if res.get("ok"):
-                    logger.info("✅ پست تصویری هایپرلینک با موفقیت ارسال شد")
+                    logger.info("✅ پست تصویری با موفقیت ارسال شد")
                     message_id = res["result"]["message_id"]
 
-                    # پین کردن پست
                     pin_payload = {"chat_id": CHAT_ID, "message_id": message_id}
                     async with session.post(url_pin, json=pin_payload, timeout=aiohttp.ClientTimeout(total=15)) as pin_res:
                         pin_json = await pin_res.json()
                         if pin_json.get("ok"):
                             logger.info("📌 پست با موفقیت پین شد")
-                else:
-                    logger.error(f"❌ خطا در ارسال عکس: {res.get('description')}")
 
-            # ۲. ارسال فایل کامل سابسکرایب پروکسی‌ها
+            # ۲. ساخت کپشن حرفه‌ای و کامل فایل پروکسی‌ها
+            time_str, jalali_str, gregorian_str = get_tehran_date_and_time()
+
+            file_caption = (
+                "📁 <b>فایل جامع سابسکرایب پروکسی‌های تلگرام</b>\n"
+                "➖➖➖➖➖➖➖➖➖➖\n"
+                f"📊 تعداد کل پروکسی‌های فعال: <b>{len(proxies)} عدد</b>\n"
+                "⚡️ نوع پروتکل: <b>MTProto (High Speed)</b>\n"
+                "🔍 وضعیت: <b>تست‌شده و بدون قطعی ✅</b>\n"
+                "➖➖➖➖➖➖➖➖➖➖\n"
+                f"⏰ ساعت به‌روزرسانی: <b>{time_str}</b> (به وقت تهران)\n"
+                f"📅 تاریخ شمسی: <b>{jalali_str}</b>\n"
+                f"📆 تاریخ میلادی: <b>{gregorian_str}</b>\n"
+                "➖➖➖➖➖➖➖➖➖➖\n"
+                f"✨ <b>کانال:</b> <a href=\"{CHANNEL_LINK}\">عضویت در کانال</a>\n"
+                f"💬 <b>گروه:</b> <a href=\"{GROUP_LINK}\">عضویت در سوپرگروه</a>"
+            )
+
+            # ارسال فایل متنی
             if Path(file_path).exists():
-                file_caption = (
-                    f"📦 <b>فایل کامل پروکسی‌های فعال</b>\n"
-                    f"📊 تعداد کل: <b>{len(proxies)}</b>\n"
-                    f"⏱ تاریخ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                    f"✨ {CHANNEL_ID}"
-                )
                 with open(file_path, "rb") as f:
                     data = aiohttp.FormData()
                     data.add_field("chat_id", CHAT_ID)
@@ -306,7 +352,7 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
                     async with session.post(url_doc, data=data, timeout=aiohttp.ClientTimeout(total=40)) as doc_r:
                         doc_res = await doc_r.json()
                         if doc_res.get("ok"):
-                            logger.info("✅ فایل کلی پروکسی‌ها با موفقیت ارسال شد")
+                            logger.info("✅ فایل کلی پروکسی‌ها با کپشن جدید ارسال شد")
 
     except Exception as e:
         logger.error(f"❌ خطا در فرآیند ارسال تلگرام: {e}")
