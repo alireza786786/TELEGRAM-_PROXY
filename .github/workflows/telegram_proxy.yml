@@ -2,9 +2,9 @@ name: Telegram Proxy Collector
 
 on:
   schedule:
-    # دقیقاً هر ۳ ساعت و ۵ دقیقه
+    # اجرا هر ۳ ساعت، در دقیقه ۵ (دور از ترافیک سرورها)
     - cron: '5 */3 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # امکان اجرای دستی با دکمه
 
 jobs:
   build:
@@ -29,5 +29,6 @@ jobs:
         BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         CHAT_ID: ${{ secrets.CHAT_ID }}
         PROXY_SOURCES: ${{ secrets.PROXY_SOURCES }}
+        SOURCE_MCI: ${{ secrets.SOURCE_MCI }}
       run: |
         python proxy_collector.py
