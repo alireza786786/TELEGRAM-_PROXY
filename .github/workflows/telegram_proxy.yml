@@ -4,7 +4,7 @@ on:
   schedule:
     # اجرا هر ۳ ساعت، در دقیقه ۵ (دور از ترافیک سرورها)
     - cron: '5 */3 * * *'
-  workflow_dispatch: # امکان اجرای دستی با دکمه
+  workflow_dispatch: # امکان اجرای دستی با دکمه برای تست
 
 jobs:
   build:
@@ -29,6 +29,5 @@ jobs:
         BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         CHAT_ID: ${{ secrets.CHAT_ID }}
         PROXY_SOURCES: ${{ secrets.PROXY_SOURCES }}
-        SOURCE_MCI: ${{ secrets.SOURCE_MCI }}
       run: |
         python proxy_collector.py
