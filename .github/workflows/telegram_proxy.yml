@@ -2,9 +2,12 @@ name: Telegram Proxy Collector
 
 on:
   schedule:
-    # اجرا هر ۳ ساعت، در دقیقه ۵ (دور از ترافیک سرورها)
+    # اجرا هر ۳ ساعت، در دقیقه ۵
     - cron: '5 */3 * * *'
-  workflow_dispatch: # امکان اجرای دستی با دکمه برای تست
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -31,3 +34,10 @@ jobs:
         PROXY_SOURCES: ${{ secrets.PROXY_SOURCES }}
       run: |
         python proxy_collector.py
+
+    - name: Commit and Push Files to Repository
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add PROXIES_TG_FORMAT.txt PROXIES_HTTP_FORMAT.txt
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update Top 100 Proxies [skip ci]" && git push)
