@@ -5,39 +5,61 @@ on:
     # اجرا هر ۳ ساعت، در دقیقه ۵
     - cron: '5 */3 * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'فقط جمع‌آوری و تست؛ چیزی به تلگرام ارسال نشود'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
+# جلوگیری از اجرای هم‌زمان دو نوبت (تداخل در commit و ارسال تکراری)
+concurrency:
+  group: proxy-collector
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install aiohttp
+      # نسخهٔ جدید فقط از کتابخانهٔ استاندارد پایتون استفاده می‌کند؛ نصب بسته لازم نیست.
 
-    - name: Run Proxy Collector
-      env:
-        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-        CHAT_ID: ${{ secrets.CHAT_ID }}
-        PROXY_SOURCES: ${{ secrets.PROXY_SOURCES }}
-      run: |
-        python proxy_collector.py
+      - name: Run Proxy Collector
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          PROXY_SOURCES: ${{ secrets.PROXY_SOURCES }}
+          TEST_LABEL: 'سرور GitHub (خارج از ایران)'
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python proxy_collector.py --dry-run
+          else
+            python proxy_collector.py
+          fi
 
-    - name: Commit and Push Files to Repository
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add PROXIES_TG_TOP100.txt PROXIES_HTTP_TOP100.txt
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update Top 100 Proxies [skip ci]" && git push)
+      - name: Commit and push result files
+        if: ${{ !cancelled() }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for f in PROXIES_TG_TOP100.txt PROXIES_HTTP_TOP100.txt state.json; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-update Top 100 Proxies [skip ci]"
+            git pull --rebase
+            git push
+          fi
