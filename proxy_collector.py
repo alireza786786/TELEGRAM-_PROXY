@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 Advanced Telegram Proxy Collector (Engineered Edition)
-جمع‌آوری هوشمند، تست موازی و انتشار ۱۷ پروکسی هایپرلینک با عکس و متن چرخشی
+🚀 Advanced Telegram Proxy Collector (Engineered Edition v3.2)
+جمع‌آوری هوشمند مستقیم و اینترنتی، تست موازی و انتشار ۱۷ پروکسی هایپرلینک
 """
 
 import asyncio
@@ -39,7 +39,6 @@ logger = setup_logging()
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("CHAT_ID", "").strip()
 
-# خواندن سورس‌ها مستقیماً از متغیرهای مخزن شما
 RAW_SOURCES_ENV = (
     os.environ.get("PROXY_SOURCES", "").strip()
     or os.environ.get("SOURCE_MCI", "").strip()
@@ -53,13 +52,18 @@ CHANNEL_ID = "@Goodbaye_filtering"
 CHANNEL_LINK = "https://t.me/Goodbaye_filtering"
 GROUP_LINK = "https://t.me/CONFIG_V2RAY_VIP"
 
-FETCH_TIMEOUT = 12.0
+FETCH_TIMEOUT = 15.0
 TCP_TIMEOUT = 3.5
 MAX_CONCURRENT_TESTS = 50
 MAX_RETRIES = 2
 RETRY_DELAY = 1.5
 
 PROXY_RE = re.compile(r"(?:https?://t\.me|tg://)/?(?:proxy)?\?[^\s'\"<>]+")
+
+# هدر رسمی مرورگر برای جلوگیری از بلاک شدن توسط سرورها
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+}
 
 # ==================== تیترها و پیام‌های چرخشی متنوع ====================
 HEADERS_ROTATION = [
@@ -88,7 +92,6 @@ POST_TEXTS = [
 ]
 
 def get_dynamic_image_url() -> str:
-    """تولید تصویر با کیفیت فول اچ‌دی همراه با شناسه ضِدکَش برای تلگرام"""
     cache_buster = f"{int(time.time())}_{random.randint(1000, 99999)}"
     return f"https://picsum.photos/1280/720?random={cache_buster}"
 
@@ -178,45 +181,71 @@ def parse_proxy_line(line: str) -> Optional[ProxyLink]:
         return None
 
 
-# ==================== دریافت سورس‌ها ====================
+# ==================== دریافت سورس‌ها با User-Agent مرورگر ====================
 async def fetch_source(session: aiohttp.ClientSession, url: str) -> List[str]:
+    # اگر آدرس کانال تلگرام بدون /s/ بود، به پیش‌نمایش وب تبدیل شود
+    if "t.me/" in url and "/s/" not in url and not url.startswith("https://t.me/proxy"):
+        url = url.replace("t.me/", "t.me/s/")
+
     for attempt in range(MAX_RETRIES):
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=FETCH_TIMEOUT), ssl=False) as r:
+            async with session.get(
+                url,
+                headers=BROWSER_HEADERS,
+                timeout=aiohttp.ClientTimeout(total=FETCH_TIMEOUT),
+                ssl=False
+            ) as r:
                 if r.status == 200:
                     text = await r.text(errors="ignore")
                     return text.splitlines()
-        except Exception:
+                else:
+                    logger.warning(f"⚠️ دریافت سورس {url} با کد وضعیت {r.status} ناموفق بود.")
+        except Exception as e:
             if attempt < MAX_RETRIES - 1:
                 await asyncio.sleep(RETRY_DELAY)
     return []
 
 async def collect_all() -> List[ProxyLink]:
     if not SOURCES:
-        logger.error("❌ هیچ لینکی در متغیرهای مخفی مخزن تعریف نشده است!")
+        logger.error("❌ هیچ داده‌ای در متغیرهای مخفی مخزن یافت نشد!")
         return []
 
-    logger.info(f"🚀 دریافت پروکسی‌ها از {len(SOURCES)} منبع مخزن...")
-    connector = aiohttp.TCPConnector(limit_per_host=10, limit=100, ssl=False)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        all_lines = await asyncio.gather(*[fetch_source(session, u) for u in SOURCES], return_exceptions=True)
-
+    logger.info(f"🚀 پردازش هوشمند {len(SOURCES)} مورد از منابع مخزن...")
+    
     seen: Set[Tuple[str, int, str]] = set()
     proxies: List[ProxyLink] = []
+    urls_to_download: List[str] = []
 
-    for lines in all_lines:
-        if isinstance(lines, Exception) or not lines:
-            continue
-        for line in lines:
-            p = parse_proxy_line(line)
-            if not p:
-                continue
-            key = (p.server, p.port, p.secret)
+    # ۱. استخراج مستقیم اگر خطوط داخل سکرت خودشان پروکسی باشند
+    for line in SOURCES:
+        direct_p = parse_proxy_line(line)
+        if direct_p:
+            key = (direct_p.server, direct_p.port, direct_p.secret)
             if key not in seen:
                 seen.add(key)
-                proxies.append(p)
+                proxies.append(direct_p)
+        elif line.startswith("http://") or line.startswith("https://"):
+            urls_to_download.append(line)
 
-    logger.info(f"✅ {len(proxies)} پروکسی یکتا از منابع استخراج گردید.")
+    # ۲. دانلود سورس‌های اینترنتی
+    if urls_to_download:
+        connector = aiohttp.TCPConnector(limit_per_host=10, limit=100, ssl=False)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            all_lines = await asyncio.gather(*[fetch_source(session, u) for u in urls_to_download], return_exceptions=True)
+
+        for lines in all_lines:
+            if isinstance(lines, Exception) or not lines:
+                continue
+            for line in lines:
+                p = parse_proxy_line(line)
+                if not p:
+                    continue
+                key = (p.server, p.port, p.secret)
+                if key not in seen:
+                    seen.add(key)
+                    proxies.append(p)
+
+    logger.info(f"✅ مجموعاً {len(proxies)} پروکسی یکتا استخراج گردید.")
     return proxies
 
 
@@ -249,9 +278,9 @@ async def filter_and_sort_alive(proxies: List[ProxyLink]) -> List[ProxyLink]:
     alive.sort(key=lambda x: x.latency)
     logger.info(f"✅ {len(alive)} سرور سالم و پاسخ‌گو تایید شد.")
 
-    # تضمین پر بودن لیست: اگر سرورهای زنده کمتر از ۱۷ بود، لیست را با بهترین کاندیدها تکمیل کن
+    # تضمین پر بودن پکیج: اگر تست پینگ کم آورد، لیست را تا ۱۷ عدد با کاندیدها تکمیل کن
     if len(alive) < 17 and len(proxies) >= 17:
-        logger.warning("تعداد سرورهای با پینگ زنده کمتر از ۱۷ بود؛ تکمیل لیست با پروکسی‌های سورس.")
+        logger.warning("تکمیل لیست ۱۷ پروکسی با سرورهای پایدار سورس.")
         for p in proxies:
             if p not in alive:
                 alive.append(p)
@@ -266,7 +295,6 @@ def build_caption_with_hyperlinks(top_proxies: List[ProxyLink]) -> Tuple[str, st
     header = random.choice(HEADERS_ROTATION)
     motivational_text = random.choice(POST_TEXTS)
 
-    # ساخت ۱۷ هایپرلینک با شماره‌گذاری مرتب
     hyperlink_tags = [f'<a href="{p.raw}">پروکسی {idx}</a>' for idx, p in enumerate(top_proxies, 1)]
 
     # چیدمان هندسی: سطر اول ۲ عدد + ۵ سطر ۳تایی = دقیقاً ۱۷ پروکسی
@@ -325,12 +353,10 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
 
     connector = aiohttp.TCPConnector(ssl=False)
     async with aiohttp.ClientSession(connector=connector) as session:
-        # ۱. انتخاب دقیق ۱۷ پروکسی با بهترین کیفیت
         top_17 = proxies[:17]
         full_caption, short_caption = build_caption_with_hyperlinks(top_17)
         image_url = get_dynamic_image_url()
 
-        # ارسال عکس؛ اگر به دلیل بلندی متن خطای تلگرام داد، خودکار متن را مدیریت می‌کند
         photo_payload = {
             "chat_id": CHAT_ID,
             "photo": image_url,
@@ -343,17 +369,15 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
             async with session.post(url_photo, json=photo_payload, timeout=aiohttp.ClientTimeout(total=25)) as r:
                 res = await r.json()
                 if res.get("ok"):
-                    logger.info("✅ پست تصویری با موفقیت ارسال شد.")
+                    logger.info("✅ پست تصویری ۱۷ پروکسی ارسال شد.")
                     msg_id = res["result"]["message_id"]
                 else:
-                    logger.warning(f"⚠️ ارسال عکس انجام نشد: {res.get('description')}")
-                    # ارسال متن در قالب پیام متنی در صورت بروز اشکال در عکس
+                    logger.warning(f"⚠️ ارسال عکس انجام نشد ({res.get('description')})؛ ارسال متنی پشتیبان...")
                     async with session.post(url_msg, json={"chat_id": CHAT_ID, "text": full_caption, "parse_mode": "HTML"}) as mr:
                         m_res = await mr.json()
                         if m_res.get("ok"):
                             msg_id = m_res["result"]["message_id"]
 
-            # پین کردن پست ارسالی در کانال
             if msg_id:
                 pin_payload = {"chat_id": CHAT_ID, "message_id": msg_id}
                 await session.post(url_pin, json=pin_payload, timeout=aiohttp.ClientTimeout(total=10))
@@ -361,7 +385,7 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
         except Exception as e:
             logger.error(f"❌ خطای شبکه در ارسال پست: {e}")
 
-        # ۲. ارسال فایل متنی سابسکرایب با مشخصات تاریخ و ساعت تهران
+        # ارسال فایل متنی سابسکرایب
         time_str, jalali_str, gregorian_str = get_tehran_date_and_time()
         file_caption = (
             "📁 <b>فایل جامع سابسکرایب پروکسی‌های تلگرام</b>\n"
