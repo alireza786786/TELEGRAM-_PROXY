@@ -35,17 +35,13 @@ def setup_logging():
 
 logger = setup_logging()
 
-# ==================== خواندن اطلاعات از متغیرهای مخفی مخزن ====================
+# ==================== خواندن دقیق متغیر PROXY_SOURCES از مخزن ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("CHAT_ID", "").strip()
+PROXY_SOURCES = os.environ.get("PROXY_SOURCES", "").strip()
 
-RAW_SOURCES_ENV = (
-    os.environ.get("PROXY_SOURCES", "").strip()
-    or os.environ.get("SOURCE_MCI", "").strip()
-    or os.environ.get("SOURCE_Max", "").strip()
-)
-
-SOURCES = [line.strip() for line in RAW_SOURCES_ENV.splitlines() if line.strip() and not line.strip().startswith("#")]
+# استخراج خطوط سورس‌ها
+SOURCES = [line.strip() for line in PROXY_SOURCES.splitlines() if line.strip() and not line.strip().startswith("#")]
 
 OUTPUT_FILE = "TELEGRAM_PROXIES.txt"
 CHANNEL_ID = "@Goodbaye_filtering"
@@ -60,7 +56,7 @@ RETRY_DELAY = 1.5
 
 PROXY_RE = re.compile(r"(?:https?://t\.me|tg://)/?(?:proxy)?\?[^\s'\"<>]+")
 
-# هدر رسمی مرورگر برای جلوگیری از بلاک شدن توسط سرورها
+# هدر رسمی مرورگر برای جلوگیری از بلاک شدن توسط سرورها و کانال‌ها
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
@@ -150,7 +146,7 @@ class ProxyLink:
         return (self.server, self.port, self.secret) == (other.server, other.port, other.secret)
 
 
-# ==================== استخراج و استانداردسازی ====================
+# ==================== استخراج و استانداردسازی پروکسی ====================
 def parse_proxy_line(line: str) -> Optional[ProxyLink]:
     line = line.strip()
     if not line:
@@ -181,9 +177,9 @@ def parse_proxy_line(line: str) -> Optional[ProxyLink]:
         return None
 
 
-# ==================== دریافت سورس‌ها با User-Agent مرورگر ====================
+# ==================== باز کردن لینک‌ها و استخراج محتوا ====================
 async def fetch_source(session: aiohttp.ClientSession, url: str) -> List[str]:
-    # اگر آدرس کانال تلگرام بدون /s/ بود، به پیش‌نمایش وب تبدیل شود
+    # در صورت آدرس کانال تلگرام، تبدیل خودکار به نسخه وب
     if "t.me/" in url and "/s/" not in url and not url.startswith("https://t.me/proxy"):
         url = url.replace("t.me/", "t.me/s/")
 
@@ -199,7 +195,7 @@ async def fetch_source(session: aiohttp.ClientSession, url: str) -> List[str]:
                     text = await r.text(errors="ignore")
                     return text.splitlines()
                 else:
-                    logger.warning(f"⚠️ دریافت سورس {url} با کد وضعیت {r.status} ناموفق بود.")
+                    logger.warning(f"⚠️ دریافت {url} با کد {r.status} ناموفق بود.")
         except Exception as e:
             if attempt < MAX_RETRIES - 1:
                 await asyncio.sleep(RETRY_DELAY)
@@ -207,16 +203,16 @@ async def fetch_source(session: aiohttp.ClientSession, url: str) -> List[str]:
 
 async def collect_all() -> List[ProxyLink]:
     if not SOURCES:
-        logger.error("❌ هیچ داده‌ای در متغیرهای مخفی مخزن یافت نشد!")
+        logger.error("❌ هیچ داده‌ای در متغیر PROXY_SOURCES یافت نشد!")
         return []
 
-    logger.info(f"🚀 پردازش هوشمند {len(SOURCES)} مورد از منابع مخزن...")
+    logger.info(f"🚀 پردازش {len(SOURCES)} مورد از منابع PROXY_SOURCES...")
     
     seen: Set[Tuple[str, int, str]] = set()
     proxies: List[ProxyLink] = []
     urls_to_download: List[str] = []
 
-    # ۱. استخراج مستقیم اگر خطوط داخل سکرت خودشان پروکسی باشند
+    # ۱. بررسی اینکه آیا خود خط مستقیماً پروکسی است یا آدرس لینک
     for line in SOURCES:
         direct_p = parse_proxy_line(line)
         if direct_p:
@@ -227,7 +223,7 @@ async def collect_all() -> List[ProxyLink]:
         elif line.startswith("http://") or line.startswith("https://"):
             urls_to_download.append(line)
 
-    # ۲. دانلود سورس‌های اینترنتی
+    # ۲. باز کردن لینک‌ها و استخراج پروکسی‌ها از آن‌ها
     if urls_to_download:
         connector = aiohttp.TCPConnector(limit_per_host=10, limit=100, ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
@@ -278,7 +274,7 @@ async def filter_and_sort_alive(proxies: List[ProxyLink]) -> List[ProxyLink]:
     alive.sort(key=lambda x: x.latency)
     logger.info(f"✅ {len(alive)} سرور سالم و پاسخ‌گو تایید شد.")
 
-    # تضمین پر بودن پکیج: اگر تست پینگ کم آورد، لیست را تا ۱۷ عدد با کاندیدها تکمیل کن
+    # تضمین پر بودن پکیج ۱۷تایی
     if len(alive) < 17 and len(proxies) >= 17:
         logger.warning("تکمیل لیست ۱۷ پروکسی با سرورهای پایدار سورس.")
         for p in proxies:
@@ -290,14 +286,14 @@ async def filter_and_sort_alive(proxies: List[ProxyLink]) -> List[ProxyLink]:
     return alive
 
 
-# ==================== تولید کپشن مهندسی‌شده ۱۷ پروکسی ====================
+# ==================== ساخت کپشن ۱۷ پروکسی ====================
 def build_caption_with_hyperlinks(top_proxies: List[ProxyLink]) -> Tuple[str, str]:
     header = random.choice(HEADERS_ROTATION)
     motivational_text = random.choice(POST_TEXTS)
 
     hyperlink_tags = [f'<a href="{p.raw}">پروکسی {idx}</a>' for idx, p in enumerate(top_proxies, 1)]
 
-    # چیدمان هندسی: سطر اول ۲ عدد + ۵ سطر ۳تایی = دقیقاً ۱۷ پروکسی
+    # چیدمان: سطر اول ۲ عدد + ۵ سطر ۳تایی = دقیقاً ۱۷ پروکسی
     rows = []
     if len(hyperlink_tags) >= 2:
         rows.append(" | ".join(hyperlink_tags[0:2]))
@@ -340,7 +336,7 @@ async def save_proxies_to_file(file_path: str, proxies: List[ProxyLink]) -> bool
         return False
 
 
-# ==================== ارسال بی‌نقص به تلگرام ====================
+# ==================== ارسال به تلگرام ====================
 async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
     if not BOT_TOKEN or not CHAT_ID:
         logger.error("❌ اطلاعات BOT_TOKEN یا CHAT_ID یافت نشد.")
@@ -385,7 +381,7 @@ async def send_to_telegram(file_path: str, proxies: List[ProxyLink]) -> None:
         except Exception as e:
             logger.error(f"❌ خطای شبکه در ارسال پست: {e}")
 
-        # ارسال فایل متنی سابسکرایب
+        # ارسال فایل متنی با تاریخ شمسی و ساعت تهران
         time_str, jalali_str, gregorian_str = get_tehran_date_and_time()
         file_caption = (
             "📁 <b>فایل جامع سابسکرایب پروکسی‌های تلگرام</b>\n"
