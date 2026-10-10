@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🚀 Advanced Telegram Proxy Collector (Engineered Edition v3.2)
-جمع‌آوری هوشمند مستقیم و اینترنتی، تست موازی و انتشار ۱۷ پروکسی هایپرلینک
+🚀 Advanced Telegram Proxy Collector (Engineered Edition v3.3)
+سازگار کامل با معتبرترین سورس‌های MTProto گیت‌هاب، تست موازی و انتشار ۱۷ پروکسی
 """
 
 import asyncio
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import aiohttp
 
-# ==================== تنظیم سیستم لاگ ====================
+# ==================== تنظیم لاگین ====================
 def setup_logging():
     log_format = '%(asctime)s - [%(levelname)s] - %(message)s'
     logging.basicConfig(
@@ -35,12 +35,11 @@ def setup_logging():
 
 logger = setup_logging()
 
-# ==================== خواندن دقیق متغیر PROXY_SOURCES از مخزن ====================
+# ==================== خواندن تنظیمات محرمانه ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("CHAT_ID", "").strip()
 PROXY_SOURCES = os.environ.get("PROXY_SOURCES", "").strip()
 
-# استخراج خطوط سورس‌ها
 SOURCES = [line.strip() for line in PROXY_SOURCES.splitlines() if line.strip() and not line.strip().startswith("#")]
 
 OUTPUT_FILE = "TELEGRAM_PROXIES.txt"
@@ -48,15 +47,15 @@ CHANNEL_ID = "@Goodbaye_filtering"
 CHANNEL_LINK = "https://t.me/Goodbaye_filtering"
 GROUP_LINK = "https://t.me/CONFIG_V2RAY_VIP"
 
-FETCH_TIMEOUT = 15.0
+FETCH_TIMEOUT = 18.0
 TCP_TIMEOUT = 3.5
 MAX_CONCURRENT_TESTS = 50
 MAX_RETRIES = 2
 RETRY_DELAY = 1.5
 
 PROXY_RE = re.compile(r"(?:https?://t\.me|tg://)/?(?:proxy)?\?[^\s'\"<>]+")
+IP_PORT_SECRET_RE = re.compile(r"(\b(?:\d{1,3}\.){3}\d{1,3}\b)[:\s]+(\d{2,5})[:\s]+([a-fA-F0-9]{32,})")
 
-# هدر رسمی مرورگر برای جلوگیری از بلاک شدن توسط سرورها و کانال‌ها
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
@@ -146,56 +145,67 @@ class ProxyLink:
         return (self.server, self.port, self.secret) == (other.server, other.port, other.secret)
 
 
-# ==================== استخراج و استانداردسازی پروکسی ====================
+# ==================== استخراج پروکسی چندگانه ====================
 def parse_proxy_line(line: str) -> Optional[ProxyLink]:
     line = line.strip()
     if not line:
         return None
     try:
+        # ۱. بررسی فرمت استاندارد تلگرام
         m = PROXY_RE.search(line)
-        if not m:
-            return None
-        url = m.group(0)
-        normalized = url if url.startswith("http") else "https://t.me/proxy" + url[url.index("?"):]
-        parsed = urlparse(normalized)
-        qs = parse_qs(parsed.query)
+        if m:
+            url = m.group(0)
+            normalized = url if url.startswith("http") else "https://t.me/proxy" + url[url.index("?"):]
+            parsed = urlparse(normalized)
+            qs = parse_qs(parsed.query)
 
-        server = (qs.get("server", [""])[0] or "").strip().rstrip(".").lower()
-        port_raw = (qs.get("port", [""])[0] or "").strip()
-        secret = (qs.get("secret", [""])[0] or "").strip()
+            server = (qs.get("server", [""])[0] or "").strip().rstrip(".").lower()
+            port_raw = (qs.get("port", [""])[0] or "").strip()
+            secret = (qs.get("secret", [""])[0] or "").strip()
 
-        if not server or not port_raw.isdigit() or not secret:
-            return None
+            if server and port_raw.isdigit() and secret:
+                port = int(port_raw)
+                if 0 < port < 65536:
+                    clean_url = f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
+                    return ProxyLink(server=server, port=port, secret=secret, raw=clean_url)
 
-        port = int(port_raw)
-        if not (0 < port < 65536):
-            return None
+        # ۲. بررسی فرمت متنی IP:PORT:SECRET
+        m_ip = IP_PORT_SECRET_RE.search(line)
+        if m_ip:
+            server = m_ip.group(1).strip()
+            port = int(m_ip.group(2).strip())
+            secret = m_ip.group(3).strip()
+            if 0 < port < 65536:
+                clean_url = f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
+                return ProxyLink(server=server, port=port, secret=secret, raw=clean_url)
 
-        clean_url = f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
-        return ProxyLink(server=server, port=port, secret=secret, raw=clean_url)
     except Exception:
-        return None
+        pass
+    return None
 
 
-# ==================== باز کردن لینک‌ها و استخراج محتوا ====================
+# ==================== دریافت سورس‌ها با اصلاح خودکار آدرس ====================
 async def fetch_source(session: aiohttp.ClientSession, url: str) -> List[str]:
-    # در صورت آدرس کانال تلگرام، تبدیل خودکار به نسخه وب
-    if "t.me/" in url and "/s/" not in url and not url.startswith("https://t.me/proxy"):
-        url = url.replace("t.me/", "t.me/s/")
+    # اصلاح خودکار لینک‌های raw گیت‌هاب برای جلوگیری از ارور ۴۰۴
+    clean_url = url.replace("/refs/heads/", "/")
+    if "t.me/" in clean_url and "/s/" not in clean_url and not clean_url.startswith("https://t.me/proxy"):
+        clean_url = clean_url.replace("t.me/", "t.me/s/")
 
     for attempt in range(MAX_RETRIES):
         try:
             async with session.get(
-                url,
+                clean_url,
                 headers=BROWSER_HEADERS,
                 timeout=aiohttp.ClientTimeout(total=FETCH_TIMEOUT),
                 ssl=False
             ) as r:
                 if r.status == 200:
                     text = await r.text(errors="ignore")
-                    return text.splitlines()
+                    lines = text.splitlines()
+                    logger.info(f"✅ سورس {clean_url} با موفقیت دریافت شد ({len(lines)} خط).")
+                    return lines
                 else:
-                    logger.warning(f"⚠️ دریافت {url} با کد {r.status} ناموفق بود.")
+                    logger.warning(f"⚠️ سورس {clean_url} با وضعیت {r.status} پاسخ داد.")
         except Exception as e:
             if attempt < MAX_RETRIES - 1:
                 await asyncio.sleep(RETRY_DELAY)
@@ -206,13 +216,12 @@ async def collect_all() -> List[ProxyLink]:
         logger.error("❌ هیچ داده‌ای در متغیر PROXY_SOURCES یافت نشد!")
         return []
 
-    logger.info(f"🚀 پردازش {len(SOURCES)} مورد از منابع PROXY_SOURCES...")
+    logger.info(f"🚀 شروع دریافت پروکسی‌ها از {len(SOURCES)} منبع معتبر...")
     
     seen: Set[Tuple[str, int, str]] = set()
     proxies: List[ProxyLink] = []
     urls_to_download: List[str] = []
 
-    # ۱. بررسی اینکه آیا خود خط مستقیماً پروکسی است یا آدرس لینک
     for line in SOURCES:
         direct_p = parse_proxy_line(line)
         if direct_p:
@@ -223,7 +232,6 @@ async def collect_all() -> List[ProxyLink]:
         elif line.startswith("http://") or line.startswith("https://"):
             urls_to_download.append(line)
 
-    # ۲. باز کردن لینک‌ها و استخراج پروکسی‌ها از آن‌ها
     if urls_to_download:
         connector = aiohttp.TCPConnector(limit_per_host=10, limit=100, ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
@@ -274,7 +282,6 @@ async def filter_and_sort_alive(proxies: List[ProxyLink]) -> List[ProxyLink]:
     alive.sort(key=lambda x: x.latency)
     logger.info(f"✅ {len(alive)} سرور سالم و پاسخ‌گو تایید شد.")
 
-    # تضمین پر بودن پکیج ۱۷تایی
     if len(alive) < 17 and len(proxies) >= 17:
         logger.warning("تکمیل لیست ۱۷ پروکسی با سرورهای پایدار سورس.")
         for p in proxies:
