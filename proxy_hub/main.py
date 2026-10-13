@@ -1,34 +1,24 @@
 import os
 import re
 import json
+import time
 import random
+import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import pytz
 
-# ==================== دریافت تنظیمات از گیت‌هاب ====================
+# ==================== دریافت اطلاعات از Secrets گیت‌هاب ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("CHAT_ID", "").strip()
 
-# منابع عمومی معتبر برای اسکرپ وب پروکسی‌ها
+# منابع عمومی معتبر برای استخراج سریع پروکسی‌ها
 CHANNELS_LIST = [
-    "TelMTProto",
-    "ProxyMTProto",
-    "iMTProto",
-    "ProxyHagh",
-    "proxies_free",
-    "MTProtoProxies",
-    "ProxyMTProto_Tel",
-    "DailyMTProto",
-    "VpnMTProto",
-    "IR_Proxy",
-    "ProxiesMTProto",
-    "FreeProxyIran",
-    "ProxyFast",
-    "ProxyNational",
-    "ProxySolid",
-    "AlphaProxies"
+    "TelMTProto", "ProxyMTProto", "iMTProto", "ProxyHagh",
+    "proxies_free", "MTProtoProxies", "ProxyMTProto_Tel",
+    "DailyMTProto", "VpnMTProto", "IR_Proxy", "ProxiesMTProto",
+    "FreeProxyIran", "ProxyFast", "ProxyNational", "ProxySolid", "AlphaProxies"
 ]
 
 # دکمه‌های شیشه‌ای ۳ گانه
@@ -54,20 +44,12 @@ MOTIVATIONAL_QUOTES = [
     "«آگاهی بزرگ‌ترین سپر انسان در برابر تاریکی و ناامیدی است.» 🌿"
 ]
 
-# والپیپرهای مینیمال و بسیار شکیل
-WALLPAPERS = [
-    "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&q=80",
-    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&q=80",
-    "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&q=80",
-    "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1200&q=80",
-    "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1200&q=80"
-]
-
 PROXY_REGEX = re.compile(
     r'(?:https?:\/\/t\.me\/(?:proxy\?|socks\?)|tg:\/\/(?:proxy\?|socks\?))[^\s"\'<>]+',
     re.IGNORECASE
 )
 
+# ==================== توابع کمکی ====================
 def normalize_link(link: str) -> str:
     """استانداردسازی لینک برای حذف قطعی تکراری‌ها"""
     clean = link.strip().replace("http://", "https://")
@@ -81,10 +63,47 @@ def get_tehran_time() -> str:
     tz = pytz.timezone('Asia/Tehran')
     return datetime.now(tz).strftime("%Y/%m/%d - %H:%M")
 
+def get_unique_ai_image() -> str:
+    """تولید تصویر با هوش مصنوعی و ذخیره در دیتابیس JSON برای عدم تکرار"""
+    now = datetime.now()
+    current_month = now.month
+    current_year = now.year
+    unique_seed = int(time.time())
+
+    history_file = "sent_images.json"
+    sent_seeds = []
+    if os.path.exists(history_file):
+        try:
+            with open(history_file, "r", encoding="utf-8") as f:
+                sent_seeds = json.load(f)
+        except Exception:
+            sent_seeds = []
+
+    # ساخت پرامپت اختصاصی و پویا بر اساس شبکه و ماه
+    prompt = (
+        f"futuristic digital network connection, cyber security glowing lights, "
+        f"abstract telegram proxy speed background, 4k resolution, cinematic lighting, "
+        f"ultra detailed, cyberpunk aesthetics, edition {current_year}_{current_month}"
+    )
+    encoded_prompt = urllib.parse.quote(prompt)
+    ai_image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&seed={unique_seed}&nologo=true"
+
+    # ذخیره شناسه جدید در تاریخچه
+    sent_seeds.append({"time": get_tehran_time(), "seed": unique_seed, "url": ai_image_url})
+    # نگه‌داری ۱۰۰ سابقه اخیر
+    sent_seeds = sent_seeds[-100:]
+    try:
+        with open(history_file, "w", encoding="utf-8") as f:
+            json.dump(sent_seeds, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[!] خطا در ذخیره تاریخچه تصاویر: {e}")
+
+    return ai_image_url
+
 def collect_proxies():
-    """استخراج مستقیم پروکسی‌ها از صفحات عمومی وب تلگرام"""
+    """جمع‌آوری پروکسی‌ها از وب عمومی تلگرام"""
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
     proxies_list = []
     seen = set()
@@ -95,9 +114,7 @@ def collect_proxies():
             res = requests.get(url, headers=headers, timeout=12)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, "html.parser")
-                # یافتن در متن‌ها
                 matches = PROXY_REGEX.findall(res.text)
-                # یافتن در تگ‌های href لینک‌ها
                 for a in soup.find_all("a", href=True):
                     href = a["href"]
                     if "proxy?" in href or "socks?" in href:
@@ -114,7 +131,7 @@ def collect_proxies():
     return proxies_list
 
 def send_file_to_channel(filename: str, caption: str):
-    """ارسال پیام اول: فایل به همراه دکمه‌های شیشه‌ای"""
+    """ارسال فایل جامع پروکسی‌ها به همراه دکمه‌های شیشه‌ای"""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
     with open(filename, "rb") as f:
         data = {
@@ -127,7 +144,7 @@ def send_file_to_channel(filename: str, caption: str):
         return r.json()
 
 def send_photo_to_channel(photo_url: str, caption: str):
-    """ارسال پیام دوم: تصویر باکیفیت + ۱۷ هایپرلینک + دکمه‌ها"""
+    """ارسال تصویر هوش مصنوعی + ۱۷ پروکسی با چیدمان اختصاصی"""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     data = {
         "chat_id": CHAT_ID,
@@ -139,15 +156,16 @@ def send_photo_to_channel(photo_url: str, caption: str):
     r = requests.post(url, data=data, timeout=40)
     return r.json()
 
+# ==================== تابع اصلی ====================
 def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("[X] مقادیر BOT_TOKEN یا CHAT_ID در سکرت‌ها خالی است!")
+        print("[X] مقادیر BOT_TOKEN یا CHAT_ID خالی است!")
         return
 
     print("[*] در حال جمع‌آوری پروکسی‌ها...")
     proxies = collect_proxies()
     total = len(proxies)
-    print(f"[✓] تعداد پروکسی‌های یکتا: {total}")
+    print(f"[✓] تعداد پروکسی‌های یافت‌شده: {total}")
 
     if total == 0:
         print("[!] پروکسی جدیدی یافت نشد.")
@@ -156,49 +174,57 @@ def main():
     time_str = get_tehran_time()
     filename = "Proxies_Daily.txt"
 
-    # ذخیره در فایل متنی
+    # ذخیره فایل کامل پروکسی‌ها
     with open(filename, "w", encoding="utf-8") as f:
         f.write(f"# Telegram Proxies Collection\n# Time: {time_str}\n# Count: {total}\n\n")
         f.write("\n".join(proxies))
 
-    # ۱. آماده‌سازی پیام اول (فایل + مشخصات + قوانین)
+    # ۱. آماده‌سازی پیام اول (فایل کامل)
     file_caption = (
         f"📁 <b>بسته جامع پروکسی‌های ضدفیلتر تلگرام</b>\n\n"
         f"📊 <b>تعداد کل پروکسی‌های یکتا:</b> <code>{total}</code> عدد\n"
         f"⏰ <b>زمان به‌روزرسانی:</b> <code>{time_str}</code>\n"
         f"🛡 <b>پروتکل‌ها:</b> MTProto & SOCKS5\n\n"
-        f"📌 <b>قوانین و راهنما:</b>\n"
-        f"▫️ هنگام اتصال، وی‌پی‌ان خود را خاموش نگه دارید.\n"
-        f"▫️ جهت بهترین سرعت، به پروکسی با کمترین پینگ متصل شوید.\n"
-        f"▫️ پروکسی‌ها کاملاً پالایش‌شده و بدون تبلیغات مزاحم هستند."
+        f"📌 <b>راهنما:</b>\n"
+        f"▫️ هنگام اتصال، فیلترشکن خود را خاموش کنید.\n"
+        f"▫️ فایل را دانلود و درون تلگرام اجرا نمایید."
     )
     print("[*] در حال ارسال فایل به کانال...")
     res_file = send_file_to_channel(filename, file_caption)
     print("نتیجه ارسال فایل:", res_file.get("ok"))
 
-    # ۲. آماده‌سازی پیام دوم (عکس + ۱۷ پروکسی هایپرلینک + سخن انگیزشی)
+    # ۲. آماده‌سازی ۱۷ پروکسی برتر با چیدمان دقیق تصویر شما:
+    # ردیف اول: ۲ تایی
+    # ردیف‌های دوم تا ششم: ۳ تایی
     top_17 = proxies[:17]
-    quote = random.choice(MOTIVATIONAL_QUOTES)
-    photo = random.choice(WALLPAPERS)
+    while len(top_17) < 17 and len(proxies) > 0:
+        top_17.append(proxies[len(top_17) % len(proxies)])
 
-    links_block = ""
-    for idx, link in enumerate(top_17, start=1):
-        num_str = f"{idx:02d}"
-        links_block += f"⚡️ <a href=\"{link}\">اتصال به پروکسی اختصاصی شماره {num_str}</a>\n"
+    row1 = f'<a href="{top_17[0]}">پروکسی</a> | <a href="{top_17[1]}">پروکسی</a>'
+    row2 = f'<a href="{top_17[2]}">پروکسی</a> | <a href="{top_17[3]}">پروکسی</a> | <a href="{top_17[4]}">پروکسی</a>'
+    row3 = f'<a href="{top_17[5]}">پروکسی</a> | <a href="{top_17[6]}">پروکسی</a> | <a href="{top_17[7]}">پروکسی</a>'
+    row4 = f'<a href="{top_17[8]}">پروکسی</a> | <a href="{top_17[9]}">پروکسی</a> | <a href="{top_17[10]}">پروکسی</a>'
+    row5 = f'<a href="{top_17[11]}">پروکسی</a> | <a href="{top_17[12]}">پروکسی</a> | <a href="{top_17[13]}">پروکسی</a>'
+    row6 = f'<a href="{top_17[14]}">پروکسی</a> | <a href="{top_17[15]}">پروکسی</a> | <a href="{top_17[16]}">پروکسی</a>'
+
+    layout_block = f"{row1}\n{row2}\n{row3}\n{row4}\n{row5}\n{row6}"
+
+    quote = random.choice(MOTIVATIONAL_QUOTES)
+    ai_photo = get_unique_ai_image()
 
     photo_caption = (
-        f"💎 <b>منتخب ۱۷ پروکسی فوق‌سریع و پایدار</b>\n"
+        f"💎 <b>منتخب ۱۷ پروکسی پرسرعت و پایدار</b>\n"
         f"⏰ <code>{time_str}</code>\n\n"
         f"{quote}\n\n"
-        f"👇 <b>جهت اتصال، روی گزینه‌های زیر کلیک کنید:</b>\n\n"
-        f"{links_block}\n"
-        f"🌐 <i>اتصال آزاد، پایدار و با بالاترین امنیت</i>"
+        f"👇 <b>جهت اتصال، لمس کنید:</b>\n\n"
+        f"{layout_block}\n\n"
+        f"🌐 <i>اتصال آزاد، سریع و بدون قطعی</i>"
     )
-    print("[*] در حال ارسال تصویر و ۱۷ پروکسی برتر...")
-    res_photo = send_photo_to_channel(photo, photo_caption)
+
+    print("[*] در حال ارسال تصویر هوش مصنوعی و هایپرلینک‌ها...")
+    res_photo = send_photo_to_channel(ai_photo, photo_caption)
     print("نتیجه ارسال تصویر:", res_photo.get("ok"))
 
-    # پاک‌کردن فایل موقت
     if os.path.exists(filename):
         os.remove(filename)
 
