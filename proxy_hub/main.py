@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import pytz
 
-# ==================== دریافت اطلاعات از Secrets گیت‌هاب ====================
+# ==================== دریافت تنظیمات از سکرت‌های گیت‌هاب ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("CHAT_ID", "").strip()
 
@@ -34,14 +34,48 @@ INLINE_KEYBOARD = {
     ]
 }
 
-# متن‌های انگیزشی و آموزنده
-MOTIVATIONAL_QUOTES = [
-    "«هیچ دیواری پایدار نیست؛ راه آگاهی و آزادی همواره گشوده خواهد شد.» ✨",
-    "«ارتباط بی‌پایان، حق مسلم دنیای امروز است؛ متصل و مانا بمانید.» 🌐",
-    "«محدودیت‌ها تنها اراده ما را برای ساختن مسیرهای نو استوارتر می‌کنند.» 💡",
-    "«تاریک‌ترین ساعت شب، مژده‌بخش طلوع روشن‌ترین سپیده‌دم است.» ☀️",
-    "«پشتکار یعنی تکرار امید و تلاش، حتی در سخت‌ترین شرایط ممکن.» 🚀",
-    "«آگاهی بزرگ‌ترین سپر انسان در برابر تاریکی و ناامیدی است.» 🌿"
+# ==================== گنجینه متن‌های فاخر و جذاب ====================
+CURATED_QUOTES = [
+    "«در میان زمستان دریافتم که در وجود من، تابستانی شکست‌ناپذیر پنهان است.» — آلبر کامو 🌿",
+    "«آب اگر راکد بماند بو می‌گیرد؛ روان باش و از هر سنگلاخی راهی بساز.» ✨",
+    "«بزرگ‌ترین شجاعت این است که در دنیایی پر از تکرار، خودت باشی و مسیرت را بسازی.» 💫",
+    "«هیچ تاریکی آن‌قدر ماندگار نیست که بتواند از طلوع خورشید جلوگیری کند.» ☀️",
+    "«زندگی یا یک ماجراجویی جسورانه است، یا هیچ چیز دیگری نیست.» — هلن کلر 🚀",
+    "«پرواز بال نمی‌خواهد؛ رهایی از حصار باورهای محدود کافی است.» 🕊",
+    "«گاه برای آغاز دوباره، تنها نیاز است تمام درهای دیروز را شجاعانه ببندی.» 🔑",
+    "«نور از میان زخم‌ها وارد روح آدمی می‌شود؛ سختی‌ها زادگاه روشنایی‌اند.» — مولانا 🕯",
+    "«صبر تلخ است، ولیکن بَرِ شیرین دارد؛ پایدار باش بر اهدافی که به آن‌ها باور داری.» 💎",
+    "«آنچه در جستجوی آنی، خود در جستجوی توست.» — شمس تبریزی 🌌",
+    "«قدرت واقعی در آرامش نهفته است؛ طوفان‌ها همیشه زودگذرند.» 🌊",
+    "«برای دیدن افق‌های تازه، گاه باید شهامت دور شدن از ساحل‌های امن را داشت.» ⛵️",
+    "«محدودیت‌ها تنها در ذهن ما نفس می‌کشند؛ از مرز اندیشه‌ات فراتر برو.» 🧠⚡️",
+    "«جهان آینه‌ای است که بازتاب باورهای تو را به نمایش می‌گذارد؛ زیبا بیندیش.» 🪞",
+    "«ارزش انسان به اندازه آرزوهای بلند و اراده بی‌پایان اوست.» 🏔",
+    "«رویاهایت را در سکوت بساز؛ بگذار موفقیتت بلندترین صدا باشد.» 🎯",
+    "«ریشه‌های قوی از طوفان‌های سهمگین هراسی ندارند؛ عمیق شو و ماندگار بمان.» 🌳",
+    "«ارتباط بی‌پایان، جریان بی‌پایان زندگی در رگ‌های زمان است؛ آزاد و متصل بمانید.» 🌐"
+]
+
+# ==================== پرامپت‌های چندگانه و هنری هوش مصنوعی ====================
+# هر پرامپت سبک متفاوتی را خلق می‌کند تا عکس‌ها فوق‌العاده متنوع و جذاب باشند
+ARTISTIC_PROMPTS = [
+    # ۱. سبک کیهانی و شفق قطبی ماورایی
+    "surreal cosmic aurora borealis over mystical glowing mountains, starry galaxy sky, nebula reflections, ethereal lighting, highly detailed 8k wallpaper, award winning nature photography",
+    
+    # ۲. نئون سایبرپانک بارانی و آینده‌نگرانه
+    "aesthetic cyberpunk city at night with neon reflections on wet street, glowing lanterns, futuristic flying drones, deep cinematic mood, blade runner style, octane render 8k",
+    
+    # ۳. انتزاعی کریستالی و مایع سه‌بعدی
+    "hyper-realistic 3D abstract floating iridescent glass crystals, flowing liquid gold ribbons, smooth gradient backdrop, luxury aesthetic, clean octane render, 8k resolution, minimalist masterpiece",
+    
+    # ۴. منظره جادویی و رویایی جنگل بیولومینسنت
+    "enchanted bioluminescent fantasy forest, glowing ethereal trees and flowers, misty magical atmosphere, fairytale landscape, cinematic depth of field, ghibli aesthetics hyper-detailed",
+    
+    # ۵. تکنولوژی شبکه نورانی و مینیمال
+    "sleek futuristic abstract technology lines, glowing turquoise and golden fiber optics, subtle dark background, elegant composition, wallpaper worthy, clean high-tech concept art 8k",
+    
+    # ۶. معماری مینیمال کویری زیر آسمان پرستاره
+    "minimalist modern glass architecture under vast starry milky way, warm interior glow, architectural photography, hyper-detailed, peaceful and majestic"
 ]
 
 PROXY_REGEX = re.compile(
@@ -51,7 +85,6 @@ PROXY_REGEX = re.compile(
 
 # ==================== توابع کمکی ====================
 def normalize_link(link: str) -> str:
-    """استانداردسازی لینک برای حذف قطعی تکراری‌ها"""
     clean = link.strip().replace("http://", "https://")
     if clean.startswith("https://t.me/proxy?"):
         clean = clean.replace("https://t.me/proxy?", "tg://proxy?")
@@ -63,45 +96,38 @@ def get_tehran_time() -> str:
     tz = pytz.timezone('Asia/Tehran')
     return datetime.now(tz).strftime("%Y/%m/%d - %H:%M")
 
-def get_unique_ai_image() -> str:
-    """تولید تصویر با هوش مصنوعی و ذخیره در دیتابیس JSON برای عدم تکرار"""
-    now = datetime.now()
-    current_month = now.month
-    current_year = now.year
-    unique_seed = int(time.time())
+def get_unique_artistic_image() -> str:
+    """انتخاب تصادفی یک سبک هنری خیره‌کننده و تولید با هوش مصنوعی با Seed اختصاصی"""
+    unique_seed = random.randint(1000000, 99999999) + int(time.time() % 10000)
+    selected_theme = random.choice(ARTISTIC_PROMPTS)
+    
+    encoded_prompt = urllib.parse.quote(selected_theme)
+    # کیفیت 1280x720 بدون لوگو و واترمارک
+    ai_image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&seed={unique_seed}&nologo=true"
 
+    # ثبت سابقه در دیتابیس sent_images.json
     history_file = "sent_images.json"
-    sent_seeds = []
+    sent_records = []
     if os.path.exists(history_file):
         try:
             with open(history_file, "r", encoding="utf-8") as f:
-                sent_seeds = json.load(f)
+                sent_records = json.load(f)
         except Exception:
-            sent_seeds = []
+            sent_records = []
 
-    # ساخت پرامپت اختصاصی و پویا بر اساس شبکه و ماه
-    prompt = (
-        f"futuristic digital network connection, cyber security glowing lights, "
-        f"abstract telegram proxy speed background, 4k resolution, cinematic lighting, "
-        f"ultra detailed, cyberpunk aesthetics, edition {current_year}_{current_month}"
-    )
-    encoded_prompt = urllib.parse.quote(prompt)
-    ai_image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&seed={unique_seed}&nologo=true"
+    sent_records.append({"time": get_tehran_time(), "seed": unique_seed, "prompt": selected_theme[:40]})
+    sent_records = sent_records[-150:]  # نگه‌داری ۱۵۰ رکورد اخیر
 
-    # ذخیره شناسه جدید در تاریخچه
-    sent_seeds.append({"time": get_tehran_time(), "seed": unique_seed, "url": ai_image_url})
-    # نگه‌داری ۱۰۰ سابقه اخیر
-    sent_seeds = sent_seeds[-100:]
     try:
         with open(history_file, "w", encoding="utf-8") as f:
-            json.dump(sent_seeds, f, ensure_ascii=False, indent=2)
+            json.dump(sent_records, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"[!] خطا در ذخیره تاریخچه تصاویر: {e}")
+        print(f"[!] خطا در ذخیره سابقه عکس: {e}")
 
     return ai_image_url
 
 def collect_proxies():
-    """جمع‌آوری پروکسی‌ها از وب عمومی تلگرام"""
+    """استخراج پروکسی‌ها از وب عمومی تلگرام"""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
@@ -131,7 +157,7 @@ def collect_proxies():
     return proxies_list
 
 def send_file_to_channel(filename: str, caption: str):
-    """ارسال فایل جامع پروکسی‌ها به همراه دکمه‌های شیشه‌ای"""
+    """ارسال فایل با ۳ دکمه شیشه‌ای"""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
     with open(filename, "rb") as f:
         data = {
@@ -140,11 +166,11 @@ def send_file_to_channel(filename: str, caption: str):
             "parse_mode": "HTML",
             "reply_markup": json.dumps(INLINE_KEYBOARD)
         }
-        r = requests.post(url, data=data, files={"document": f}, timeout=40)
+        r = requests.post(url, data=data, files={"document": f}, timeout=45)
         return r.json()
 
 def send_photo_to_channel(photo_url: str, caption: str):
-    """ارسال تصویر هوش مصنوعی + ۱۷ پروکسی با چیدمان اختصاصی"""
+    """ارسال عکس جذاب با ۱۷ هایپرلینک و ۳ دکمه شیشه‌ای"""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     data = {
         "chat_id": CHAT_ID,
@@ -153,10 +179,10 @@ def send_photo_to_channel(photo_url: str, caption: str):
         "parse_mode": "HTML",
         "reply_markup": json.dumps(INLINE_KEYBOARD)
     }
-    r = requests.post(url, data=data, timeout=40)
+    r = requests.post(url, data=data, timeout=45)
     return r.json()
 
-# ==================== تابع اصلی ====================
+# ==================== اجرای برنامه ====================
 def main():
     if not BOT_TOKEN or not CHAT_ID:
         print("[X] مقادیر BOT_TOKEN یا CHAT_ID خالی است!")
@@ -165,7 +191,7 @@ def main():
     print("[*] در حال جمع‌آوری پروکسی‌ها...")
     proxies = collect_proxies()
     total = len(proxies)
-    print(f"[✓] تعداد پروکسی‌های یافت‌شده: {total}")
+    print(f"[✓] تعداد پروکسی‌های یکتا: {total}")
 
     if total == 0:
         print("[!] پروکسی جدیدی یافت نشد.")
@@ -176,30 +202,29 @@ def main():
 
     # ذخیره فایل کامل پروکسی‌ها
     with open(filename, "w", encoding="utf-8") as f:
-        f.write(f"# Telegram Proxies Collection\n# Time: {time_str}\n# Count: {total}\n\n")
+        f.write(f"# Telegram MTProto & SOCKS5 Proxies\n# Time: {time_str}\n# Count: {total}\n\n")
         f.write("\n".join(proxies))
 
-    # ۱. آماده‌سازی پیام اول (فایل کامل)
+    # ۱. پیام اول (فایل کامل با کپشن شکیل)
     file_caption = (
         f"📁 <b>بسته جامع پروکسی‌های ضدفیلتر تلگرام</b>\n\n"
         f"📊 <b>تعداد کل پروکسی‌های یکتا:</b> <code>{total}</code> عدد\n"
         f"⏰ <b>زمان به‌روزرسانی:</b> <code>{time_str}</code>\n"
         f"🛡 <b>پروتکل‌ها:</b> MTProto & SOCKS5\n\n"
         f"📌 <b>راهنما:</b>\n"
-        f"▫️ هنگام اتصال، فیلترشکن خود را خاموش کنید.\n"
+        f"▫️ هنگام اتصال به پروکسی، وی‌پی‌ان خود را خاموش کنید.\n"
         f"▫️ فایل را دانلود و درون تلگرام اجرا نمایید."
     )
     print("[*] در حال ارسال فایل به کانال...")
     res_file = send_file_to_channel(filename, file_caption)
     print("نتیجه ارسال فایل:", res_file.get("ok"))
 
-    # ۲. آماده‌سازی ۱۷ پروکسی برتر با چیدمان دقیق تصویر شما:
-    # ردیف اول: ۲ تایی
-    # ردیف‌های دوم تا ششم: ۳ تایی
+    # ۲. پیام دوم (عکس اختصاصی + ۱۷ پروکسی با چیدمان دقیق تصویر شما)
     top_17 = proxies[:17]
     while len(top_17) < 17 and len(proxies) > 0:
         top_17.append(proxies[len(top_17) % len(proxies)])
 
+    # چیدمان: خط اول ۲ تایی، ۵ خط بعدی ۳ تایی (مجموعاً ۱۷ عدد)
     row1 = f'<a href="{top_17[0]}">پروکسی</a> | <a href="{top_17[1]}">پروکسی</a>'
     row2 = f'<a href="{top_17[2]}">پروکسی</a> | <a href="{top_17[3]}">پروکسی</a> | <a href="{top_17[4]}">پروکسی</a>'
     row3 = f'<a href="{top_17[5]}">پروکسی</a> | <a href="{top_17[6]}">پروکسی</a> | <a href="{top_17[7]}">پروکسی</a>'
@@ -209,19 +234,19 @@ def main():
 
     layout_block = f"{row1}\n{row2}\n{row3}\n{row4}\n{row5}\n{row6}"
 
-    quote = random.choice(MOTIVATIONAL_QUOTES)
-    ai_photo = get_unique_ai_image()
+    selected_quote = random.choice(CURATED_QUOTES)
+    ai_photo = get_unique_artistic_image()
 
     photo_caption = (
         f"💎 <b>منتخب ۱۷ پروکسی پرسرعت و پایدار</b>\n"
         f"⏰ <code>{time_str}</code>\n\n"
-        f"{quote}\n\n"
+        f"{selected_quote}\n\n"
         f"👇 <b>جهت اتصال، لمس کنید:</b>\n\n"
         f"{layout_block}\n\n"
-        f"🌐 <i>اتصال آزاد، سریع و بدون قطعی</i>"
+        f"🌐 <i>اتصال آزاد، پایدار و با بالاترین امنیت</i>"
     )
 
-    print("[*] در حال ارسال تصویر هوش مصنوعی و هایپرلینک‌ها...")
+    print("[*] در حال ارسال تصویر هنری و هایپرلینک‌ها...")
     res_photo = send_photo_to_channel(ai_photo, photo_caption)
     print("نتیجه ارسال تصویر:", res_photo.get("ok"))
 
