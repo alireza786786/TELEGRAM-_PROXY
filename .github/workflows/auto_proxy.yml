@@ -1,0 +1,32 @@
+name: Auto Collect and Publish Proxies
+
+on:
+  schedule:
+    # اجرا خودکار هر ۴ ساعت یک‌بار
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # دکمه اجرای دستی در گیت‌هاب
+
+jobs:
+  run-publisher:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r proxy_hub/requirements.txt
+
+      - name: Run Script
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          python proxy_hub/main.py
