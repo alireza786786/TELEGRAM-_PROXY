@@ -2,9 +2,13 @@ name: Auto Collect and Publish Proxies
 
 on:
   schedule:
-    # اجرا خودکار هر ۴ ساعت یک‌بار
-    - cron: '0 */4 * * *'
-  workflow_dispatch: # دکمه اجرای دستی در گیت‌هاب
+    # بررسی مداوم هر ۴۵ دقیقه یک‌بار
+    - cron: '*/45 * * * *'
+  workflow_dispatch:
+
+# مجوز نوشتن برای ذخیره تاریخچه در مخزن
+permissions:
+  contents: write
 
 jobs:
   run-publisher:
@@ -30,3 +34,11 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           python proxy_hub/main.py
+
+      - name: Save Sent History to Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add proxy_hub/sent_proxies.txt || true
+          git commit -m "Update sent proxies history [skip ci]" || echo "No new history to commit"
+          git push || true
