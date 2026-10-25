@@ -10,7 +10,7 @@ import aiosqlite
 
 # ==================== متغیرها ====================
 # دریافت متغیرها بر اساس اسامی که مشخص کردید
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.environ.get("BOT_TOKEN1", "").strip()
 CHAT_ID = int(os.environ.get("CHAT_ID", 0))
 
 REQUIRED_INVITES = 3  # شرط دعوت ۳ نفر (هم برای کاربران عادی و هم برای ادمین‌ها)
