@@ -62,7 +62,7 @@ def get_geo_info(ip):
     return "🇷🇺", "Russia", "DC"
 
 def extract_configs_from_sources(sources_text):
-    """استخراج خط‌به‌خط بدون حذف اسامی دارای فاصله و دور زدن کش CDN"""
+    """استخراج تمام کانفیگ‌ها و بازگرداندن همه آن‌ها بدون حذف هیچ تکراری"""
     links = [line.strip() for line in re.split(r'[\r\n,]+', sources_text) if line.strip()]
     total_links = len(links)
     
@@ -77,13 +77,11 @@ def extract_configs_from_sources(sources_text):
         print(f"[{idx}/{total_links}] ⏳ در حال دریافت از: {domain} ...", flush=True)
         
         try:
-            # هدرهای ضد کش برای دریافت تازه ترین نسخه
             headers = {
                 'User-Agent': 'v2rayNG/1.8.12',
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                 'Pragma': 'no-cache'
             }
-            # اضافه کردن پارامتر زمان برای دور زدن کش سرورهای CDN
             separator = '&' if '?' in url else '?'
             fetch_url = f"{url}{separator}_t={int(time.time())}"
             
@@ -92,7 +90,6 @@ def extract_configs_from_sources(sources_text):
             if resp.status_code == 200:
                 text = resp.text.strip()
                 
-                # تلاش برای دیکود کردن بیس۶۴ با حذف فاصله‌های اضافی
                 try:
                     clean_b64 = re.sub(r'\s+', '', text)
                     padding = '=' * (-len(clean_b64) % 4)
@@ -102,14 +99,13 @@ def extract_configs_from_sources(sources_text):
                 except Exception:
                     pass
                 
-                # استخراج خط‌به‌خط (مانع از ناقص شدن کانفیگ‌های دارای فاصله می‌شود)
                 found = []
                 for line in text.splitlines():
                     line = line.strip()
                     if any(line.lower().startswith(p) for p in SUPPORTED_PROTOCOLS):
                         found.append(line)
                 
-                print(f"    ✅ دریافت شد ⬅️ تعداد کانفیگ واقعی این سورس: {len(found)} عدد", flush=True)
+                print(f"    ✅ دریافت شد ⬅️ تعداد کانفیگ این سورس: {len(found)} عدد", flush=True)
                 raw_configs.extend(found)
             else:
                 print(f"    ⚠️ خطا در پاسخ سرور (کد: {resp.status_code})", flush=True)
@@ -117,13 +113,12 @@ def extract_configs_from_sources(sources_text):
             print(f"    ❌ خطا در سورس {idx} (رد شد): {e}", flush=True)
             continue
 
-    # حذف تکراری‌ها بدون آسیب به آدرس اصلی کانفیگ
-    unique_configs = list(dict.fromkeys(raw_configs))
     print("="*50, flush=True)
-    print(f"📊 مجموع کانفیگ‌های دریافت شده: {len(raw_configs)} عدد", flush=True)
-    print(f"✨ مجموع کانفیگ‌های یکتا (بدون تکراری): {len(unique_configs)} عدد", flush=True)
+    print(f"📊 مجموع کل کانفیگ‌های استخراج‌شده (بدون حذف تکراری): {len(raw_configs)} عدد", flush=True)
     print("="*50 + "\n", flush=True)
-    return unique_configs
+    
+    # مستقیماً کل کانفیگ‌ها برگردانده می‌شوند بدون هیچ‌گونه حذف تکراری
+    return raw_configs
 
 def parse_and_rebuild_config(config_str):
     try:
