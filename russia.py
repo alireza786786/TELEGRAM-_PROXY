@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import socket
 import base64
 import urllib.parse
@@ -10,21 +11,23 @@ import requests
 import pytz
 import jdatetime
 
-# دریافت متغیرهای محرمانه از گیت‌هاب
 BOT_TOKEN = os.getenv("BOT_TOKEN2")
 CHAT_ID = os.getenv("CHAT_ID")
 SOURCE_1 = os.getenv("SOURCE_1", "")
 
 GEO_CACHE = {}
+SUPPORTED_PROTOCOLS = (
+    "vmess://", "vless://", "trojan://", "ss://", 
+    "ssr://", "hysteria://", "hysteria2://", "hy2://", 
+    "tuic://", "shadowsocks://"
+)
 
 def get_country_flag(country_code):
-    """تبدیل کد دو حرفی کشور به ایموجی پرچم"""
     if not country_code or len(country_code) != 2:
         return "🌐"
     return "".join(chr(127397 + ord(c.upper())) for c in country_code)
 
 def resolve_and_ping(host, port, timeout=1.8):
-    """تست پینگ اتصال TCP واقعی، بررسی دسترسی و نسخه IP"""
     try:
         start_time = datetime.now()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -40,7 +43,6 @@ def resolve_and_ping(host, port, timeout=1.8):
         return None, None, None
 
 def get_geo_info(ip):
-    """دریافت اطلاعات جغرافیایی، کشور و نام دیتاسنتر با کش داخلی"""
     if not ip:
         return "🇷🇺", "Russia", "DC"
     if ip in GEO_CACHE:
@@ -60,58 +62,70 @@ def get_geo_info(ip):
     return "🇷🇺", "Russia", "DC"
 
 def extract_configs_from_sources(sources_text):
-    """استخراج تمام کانفیگ‌ها از ۳ لینک با گزارش‌دهی دقیق در کنسول"""
+    """استخراج خط‌به‌خط بدون حذف اسامی دارای فاصله و دور زدن کش CDN"""
     links = [line.strip() for line in re.split(r'[\r\n,]+', sources_text) if line.strip()]
     total_links = len(links)
     
     print("\n" + "="*50, flush=True)
-    print(f"📡 تعداد کل لینک‌های شناسایی‌شده در SOURCE_1: {total_links} عدد", flush=True)
+    print(f"📡 تعداد سورس‌های شناسایی‌شده: {total_links} عدد", flush=True)
     print("="*50, flush=True)
     
-    if total_links == 0:
-        print("[❌] هیچ لینکی در SOURCE_1 یافت نشد!", flush=True)
-        return []
-
     raw_configs = []
     
     for idx, url in enumerate(links, 1):
         domain = urllib.parse.urlsplit(url).netloc or f"Source-{idx}"
-        print(f"[{idx}/{total_links}] ⏳ در حال بررسی سورس: {domain} ...", flush=True)
+        print(f"[{idx}/{total_links}] ⏳ در حال دریافت از: {domain} ...", flush=True)
         
         try:
-            headers = {'User-Agent': 'v2rayNG/1.8.12'}
-            resp = requests.get(url, headers=headers, timeout=12)
+            # هدرهای ضد کش برای دریافت تازه ترین نسخه
+            headers = {
+                'User-Agent': 'v2rayNG/1.8.12',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            }
+            # اضافه کردن پارامتر زمان برای دور زدن کش سرورهای CDN
+            separator = '&' if '?' in url else '?'
+            fetch_url = f"{url}{separator}_t={int(time.time())}"
+            
+            resp = requests.get(fetch_url, headers=headers, timeout=15)
             
             if resp.status_code == 200:
                 text = resp.text.strip()
-                # بررسی ساب‌اسکریپشن بیس۶۴
+                
+                # تلاش برای دیکود کردن بیس۶۴ با حذف فاصله‌های اضافی
                 try:
-                    padding = '=' * (-len(text) % 4)
-                    decoded = base64.b64decode(text + padding).decode('utf-8', errors='ignore')
-                    if any(p in decoded for p in ["vmess://", "vless://", "ss://", "trojan://"]):
+                    clean_b64 = re.sub(r'\s+', '', text)
+                    padding = '=' * (-len(clean_b64) % 4)
+                    decoded = base64.b64decode(clean_b64 + padding).decode('utf-8', errors='ignore')
+                    if any(p in decoded for p in SUPPORTED_PROTOCOLS):
                         text = decoded
                 except Exception:
                     pass
                 
-                found = re.findall(r'((?:vmess|vless|trojan|ss|ssr|hysteria|hy2|tuic)://[^\s]+)', text)
-                print(f"    ✅ دریافت موفق (HTTP 200) ⬅️ تعداد کانفیگ دریافت‌شده: {len(found)} عدد", flush=True)
+                # استخراج خط‌به‌خط (مانع از ناقص شدن کانفیگ‌های دارای فاصله می‌شود)
+                found = []
+                for line in text.splitlines():
+                    line = line.strip()
+                    if any(line.lower().startswith(p) for p in SUPPORTED_PROTOCOLS):
+                        found.append(line)
+                
+                print(f"    ✅ دریافت شد ⬅️ تعداد کانفیگ واقعی این سورس: {len(found)} عدد", flush=True)
                 raw_configs.extend(found)
             else:
-                print(f"    ⚠️ خطا در ارتباط با سرور سورس (کد وضعیت: {resp.status_code})", flush=True)
+                print(f"    ⚠️ خطا در پاسخ سرور (کد: {resp.status_code})", flush=True)
         except Exception as e:
-            print(f"    ❌ سورس شماره {idx} با خطا مواجه شد و رد گردید: {e}", flush=True)
+            print(f"    ❌ خطا در سورس {idx} (رد شد): {e}", flush=True)
             continue
 
-    # حذف کانفیگ‌های تکراری
+    # حذف تکراری‌ها بدون آسیب به آدرس اصلی کانفیگ
     unique_configs = list(dict.fromkeys(raw_configs))
     print("="*50, flush=True)
-    print(f"📊 مجموع کانفیگ‌های خام: {len(raw_configs)} عدد", flush=True)
-    print(f"✨ مجموع کانفیگ‌های یکتا (پس از حذف تکراری): {len(unique_configs)} عدد", flush=True)
+    print(f"📊 مجموع کانفیگ‌های دریافت شده: {len(raw_configs)} عدد", flush=True)
+    print(f"✨ مجموع کانفیگ‌های یکتا (بدون تکراری): {len(unique_configs)} عدد", flush=True)
     print("="*50 + "\n", flush=True)
     return unique_configs
 
 def parse_and_rebuild_config(config_str):
-    """بررسی زنده بودن، سنجش پینگ کمتر از ۵۰۰ و بازنویسی با الگوی اختصاصی"""
     try:
         proto = config_str.split("://")[0].lower()
         feature = "Reality" if "reality" in config_str.lower() else ("WS" if "ws" in config_str.lower() else "TLS/TCP")
@@ -124,12 +138,10 @@ def parse_and_rebuild_config(config_str):
             port = data.get("port")
             
             ping, ip, ip_ver = resolve_and_ping(host, port)
-            if not ping or ping >= 500:  # فیلتر سخت‌گیرانه Strict VIP
+            if not ping or ping >= 500:
                 return None
                 
             flag, country, city = get_geo_info(ip)
-            
-            # الگوی اختصاصی شما
             remark = (
                 f"👉🆔@Goodbaye_filtering 📡{flag} {country} ®️{city}\n"
                 f"🅿️ping:{ping}ms ⚡{feature} | {proto.upper()} {ip_ver}"
@@ -151,7 +163,6 @@ def parse_and_rebuild_config(config_str):
                 return None
                 
             flag, country, city = get_geo_info(ip)
-            
             remark = (
                 f"👉🆔@Goodbaye_filtering 📡{flag} {country} ®️{city}\n"
                 f"🅿️ping:{ping}ms ⚡{feature} | {proto.upper()} {ip_ver}"
@@ -164,7 +175,6 @@ def parse_and_rebuild_config(config_str):
         return None
 
 def send_telegram_file(file_path, healthy_count):
-    """ارسال فایل همراه با کپشن رسمی و ۴ دکمه شیشه‌ای به کانال"""
     tz = pytz.timezone("Asia/Tehran")
     now_tehran = datetime.now(tz)
     jalali_date = jdatetime.datetime.fromgregorian(datetime=now_tehran).strftime("%Y/%m/%d")
@@ -218,7 +228,7 @@ def main():
             if res:
                 healthy_configs.append(res)
 
-    print(f"🎯 تعداد نهایی کانفیگ‌های زنده و پرسرعت: {len(healthy_configs)} عدد", flush=True)
+    print(f"🎯 تعداد نهایی کانفیگ‌های زنده و سالم: {len(healthy_configs)} عدد", flush=True)
 
     if not healthy_configs:
         print("[!] هیچ کانفیگی شرط پینگ زیر ۵۰۰ میلی‌ثانیه را پاس نکرد.", flush=True)
