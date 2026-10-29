@@ -1,0 +1,31 @@
+name: Link Ru Configs Pipeline
+
+on:
+  schedule:
+    - cron: '0 */3 * * *' # اجرای خودکار هر ۳ ساعت یک‌بار
+  workflow_dispatch:      # امکان اجرای دستی از تب Actions
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install requests pytz jdatetime
+
+      - name: Run Script
+        env:
+          BOT_TOKEN2: ${{ secrets.BOT_TOKEN2 }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          SOURCE_1: ${{ secrets.SOURCE_1 }}
+        run: |
+          python link_ru.py
