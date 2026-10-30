@@ -1,239 +1,495 @@
+import base64
+import binascii
+import json
 import os
 import re
-import json
-import time
 import socket
-import base64
+import time
 import urllib.parse
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-import requests
-import pytz
-import jdatetime
+from datetime import datetime
 
-BOT_TOKEN = os.getenv("BOT_TOKEN2")
-CHAT_ID = os.getenv("CHAT_ID")
-SOURCE_1 = os.getenv("SOURCE_1", "")
+import jdatetime
+import pytz
+import requests
+
+
+BOT_TOKEN = os.getenv("BOT_TOKEN2", "").strip()
+CHAT_ID = os.getenv("CHAT_ID", "").strip()
+SOURCE_1 = os.getenv("SOURCE_1", "").strip()
 
 GEO_CACHE = {}
+
 SUPPORTED_PROTOCOLS = (
-    "vmess://", "vless://", "trojan://", "ss://", 
-    "ssr://", "hysteria://", "hysteria2://", "hy2://", 
-    "tuic://", "shadowsocks://"
+    "vmess://",
+    "vless://",
+    "trojan://",
+    "ss://",
+    "ssr://",
+    "hysteria://",
+    "hysteria2://",
+    "hy2://",
+    "tuic://",
+    "shadowsocks://",
 )
 
+
+def decode_base64(value):
+    """Decode standard or URL-safe Base64 with optional missing padding."""
+    value = re.sub(r"\s+", "", value or "")
+
+    if not value:
+        raise ValueError("Base64 value is empty")
+
+    value += "=" * (-len(value) % 4)
+    decoded = base64.urlsafe_b64decode(value.encode("ascii"))
+    return decoded
+
+
 def get_country_flag(country_code):
-    if not country_code or len(country_code) != 2:
+    if (
+        not country_code
+        or len(country_code) != 2
+        or not country_code.isalpha()
+    ):
         return "🌐"
-    return "".join(chr(127397 + ord(c.upper())) for c in country_code)
+
+    return "".join(
+        chr(127397 + ord(char.upper()))
+        for char in country_code
+    )
+
 
 def resolve_and_ping(host, port, timeout=1.8):
-    try:
-        start_time = datetime.now()
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect((host, int(port)))
-        sock.close()
-        latency = int((datetime.now() - start_time).total_seconds() * 1000)
-        
-        ip = socket.gethostbyname(host)
-        ip_ver = "IPv6" if ":" in ip else "IPv4"
-        return latency, ip, ip_ver
-    except Exception:
+    """Try TCP connections over available IPv4 and IPv6 addresses."""
+    if not host or port is None:
         return None, None, None
+
+    try:
+        port = int(port)
+
+        if not 1 <= port <= 65535:
+            return None, None, None
+
+        addresses = socket.getaddrinfo(
+            host,
+            port,
+            type=socket.SOCK_STREAM,
+        )
+    except (OSError, TypeError, ValueError):
+        return None, None, None
+
+    for family, socktype, proto, _, sockaddr in addresses:
+        sock = socket.socket(family, socktype, proto)
+        sock.settimeout(timeout)
+        start_time = time.monotonic()
+
+        try:
+            sock.connect(sockaddr)
+            latency = int((time.monotonic() - start_time) * 1000)
+            ip = sockaddr[0]
+            ip_version = "IPv6" if family == socket.AF_INET6 else "IPv4"
+            return latency, ip, ip_version
+        except OSError:
+            continue
+        finally:
+            sock.close()
+
+    return None, None, None
+
 
 def get_geo_info(ip):
     if not ip:
-        return "🇷🇺", "Russia", "DC"
+        return "🌐", "Unknown", "Unknown"
+
     if ip in GEO_CACHE:
         return GEO_CACHE[ip]
+
     try:
-        url = f"http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,org"
-        res = requests.get(url, timeout=3).json()
-        if res.get("status") == "success":
-            flag = get_country_flag(res.get("countryCode", "RU"))
-            country = res.get("country", "Russia")
-            city = res.get("city") or res.get("org", "Cloud")
-            city = city.split()[0] if city else "DC"
-            GEO_CACHE[ip] = (flag, country, city)
-            return GEO_CACHE[ip]
-    except Exception:
+        encoded_ip = urllib.parse.quote(ip, safe="")
+        response = requests.get(
+            "http://ip-api.com/json/"
+            f"{encoded_ip}?fields=status,country,countryCode,city,org",
+            timeout=4,
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        if result.get("status") == "success":
+            flag = get_country_flag(result.get("countryCode"))
+            country = result.get("country") or "Unknown"
+            city = result.get("city") or result.get("org") or "Unknown"
+            info = (flag, country, city.split()[0])
+
+            GEO_CACHE[ip] = info
+            return info
+
+    except (requests.RequestException, ValueError, TypeError):
         pass
-    return "🇷🇺", "Russia", "DC"
+
+    return "🌐", "Unknown", "Unknown"
+
 
 def extract_configs_from_sources(sources_text):
-    """استخراج تمام کانفیگ‌ها و بازگرداندن همه آن‌ها بدون حذف هیچ تکراری"""
-    links = [line.strip() for line in re.split(r'[\r\n,]+', sources_text) if line.strip()]
-    total_links = len(links)
-    
-    print("\n" + "="*50, flush=True)
-    print(f"📡 تعداد سورس‌های شناسایی‌شده: {total_links} عدد", flush=True)
-    print("="*50, flush=True)
-    
-    raw_configs = []
-    
-    for idx, url in enumerate(links, 1):
-        domain = urllib.parse.urlsplit(url).netloc or f"Source-{idx}"
-        print(f"[{idx}/{total_links}] ⏳ در حال دریافت از: {domain} ...", flush=True)
-        
+    """Fetch supported links from the URLs supplied in SOURCE_1."""
+    source_urls = [
+        line.strip()
+        for line in re.split(r"[\r\n,]+", sources_text or "")
+        if line.strip()
+    ]
+
+    print(
+        f"\n{'=' * 50}\n"
+        f"📡 تعداد سورس‌های شناسایی‌شده: {len(source_urls)} عدد\n"
+        f"{'=' * 50}",
+        flush=True,
+    )
+
+    all_configs = []
+
+    for index, url in enumerate(source_urls, start=1):
+        domain = urllib.parse.urlsplit(url).netloc or f"Source-{index}"
+        print(
+            f"[{index}/{len(source_urls)}] ⏳ دریافت از: {domain}",
+            flush=True,
+        )
+
+        headers = {
+            "User-Agent": "v2rayNG/1.8.12",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+        }
+
+        separator = "&" if "?" in url else "?"
+        fetch_url = f"{url}{separator}_t={int(time.time())}"
+
         try:
-            headers = {
-                'User-Agent': 'v2rayNG/1.8.12',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache'
-            }
-            separator = '&' if '?' in url else '?'
-            fetch_url = f"{url}{separator}_t={int(time.time())}"
-            
-            resp = requests.get(fetch_url, headers=headers, timeout=15)
-            
-            if resp.status_code == 200:
-                text = resp.text.strip()
-                
-                try:
-                    clean_b64 = re.sub(r'\s+', '', text)
-                    padding = '=' * (-len(clean_b64) % 4)
-                    decoded = base64.b64decode(clean_b64 + padding).decode('utf-8', errors='ignore')
-                    if any(p in decoded for p in SUPPORTED_PROTOCOLS):
-                        text = decoded
-                except Exception:
-                    pass
-                
-                found = []
-                for line in text.splitlines():
-                    line = line.strip()
-                    if any(line.lower().startswith(p) for p in SUPPORTED_PROTOCOLS):
-                        found.append(line)
-                
-                print(f"    ✅ دریافت شد ⬅️ تعداد کانفیگ این سورس: {len(found)} عدد", flush=True)
-                raw_configs.extend(found)
-            else:
-                print(f"    ⚠️ خطا در پاسخ سرور (کد: {resp.status_code})", flush=True)
-        except Exception as e:
-            print(f"    ❌ خطا در سورس {idx} (رد شد): {e}", flush=True)
-            continue
+            response = requests.get(
+                fetch_url,
+                headers=headers,
+                timeout=15,
+            )
+            response.raise_for_status()
+            text = response.text.strip()
 
-    print("="*50, flush=True)
-    print(f"📊 مجموع کل کانفیگ‌های استخراج‌شده (بدون حذف تکراری): {len(raw_configs)} عدد", flush=True)
-    print("="*50 + "\n", flush=True)
-    
-    # مستقیماً کل کانفیگ‌ها برگردانده می‌شوند بدون هیچ‌گونه حذف تکراری
-    return raw_configs
+            # Subscription responses are often Base64 encoded.
+            try:
+                decoded_text = decode_base64(text).decode(
+                    "utf-8",
+                    errors="ignore",
+                )
 
-def parse_and_rebuild_config(config_str):
+                if any(
+                    protocol in decoded_text.lower()
+                    for protocol in SUPPORTED_PROTOCOLS
+                ):
+                    text = decoded_text
+
+            except (
+                ValueError,
+                UnicodeError,
+                binascii.Error,
+            ):
+                pass
+
+            found = [
+                line.strip()
+                for line in text.splitlines()
+                if line.strip().lower().startswith(SUPPORTED_PROTOCOLS)
+            ]
+
+            print(
+                f"    ✅ تعداد کانفیگ این سورس: {len(found)}",
+                flush=True,
+            )
+            all_configs.extend(found)
+
+        except requests.RequestException as error:
+            print(
+                f"    ❌ دریافت سورس {index} ناموفق بود: {error}",
+                flush=True,
+            )
+
+    # Remove duplicate links while preserving their original order.
+    all_configs = list(dict.fromkeys(all_configs))
+
+    print(
+        f"{'=' * 50}\n"
+        f"📊 مجموع کانفیگ‌های استخراج‌شده: {len(all_configs)}\n"
+        f"{'=' * 50}\n",
+        flush=True,
+    )
+
+    return all_configs
+
+
+def get_vmess_data(config):
+    payload = config[len("vmess://"):].split("#", 1)[0]
+    decoded = decode_base64(payload).decode("utf-8")
+    return json.loads(decoded)
+
+
+def get_endpoint(config, protocol):
+    """Extract host and port from common proxy-link formats."""
+    parsed = urllib.parse.urlsplit(config)
+
     try:
-        proto = config_str.split("://")[0].lower()
-        feature = "Reality" if "reality" in config_str.lower() else ("WS" if "ws" in config_str.lower() else "TLS/TCP")
+        if parsed.hostname and parsed.port:
+            return parsed.hostname, parsed.port
+    except ValueError:
+        return None, None
 
-        if proto == "vmess":
-            b64_data = config_str.replace("vmess://", "")
-            b64_data += '=' * (-len(b64_data) % 4)
-            data = json.loads(base64.b64decode(b64_data).decode('utf-8', errors='ignore'))
-            host = data.get("add")
-            port = data.get("port")
-            
-            ping, ip, ip_ver = resolve_and_ping(host, port)
-            if not ping or ping >= 500:
-                return None
-                
-            flag, country, city = get_geo_info(ip)
-            remark = (
-                f"👉🆔@Goodbaye_filtering 📡{flag} {country} ®️{city}\n"
-                f"🅿️ping:{ping}ms ⚡{feature} | {proto.upper()} {ip_ver}"
-            )
-            data["ps"] = remark
-            new_b64 = base64.b64encode(json.dumps(data, ensure_ascii=False).encode('utf-8')).decode('utf-8')
-            return f"vmess://{new_b64}"
+    if protocol in ("ss", "shadowsocks"):
+        body = config.split("://", 1)[1].split("#", 1)[0]
 
+        # Legacy Shadowsocks links may encode the whole endpoint.
+        if "@" not in body:
+            try:
+                decoded = decode_base64(body).decode("utf-8")
+                parsed = urllib.parse.urlsplit("//" + decoded)
+
+                if parsed.hostname and parsed.port:
+                    return parsed.hostname, parsed.port
+            except (
+                ValueError,
+                UnicodeError,
+                binascii.Error,
+            ):
+                pass
+
+    if protocol == "ssr":
+        body = config.split("://", 1)[1].split("#", 1)[0]
+
+        try:
+            decoded = decode_base64(body).decode("utf-8")
+            fields = decoded.split(":", 5)
+
+            if len(fields) >= 6:
+                host = fields[0]
+                port = int(fields[1])
+
+                if host.startswith("[") and host.endswith("]"):
+                    host = host[1:-1]
+
+                return host, port
+
+        except (
+            ValueError,
+            UnicodeError,
+            binascii.Error,
+        ):
+            pass
+
+    return None, None
+
+
+def parse_and_rebuild_config(config):
+    try:
+        protocol = config.split("://", 1)[0].lower()
+        supported_names = {
+            item[:-3]
+            for item in SUPPORTED_PROTOCOLS
+        }
+
+        if protocol not in supported_names:
+            return None
+
+        vmess_data = None
+
+        if protocol == "vmess":
+            vmess_data = get_vmess_data(config)
+            host = vmess_data.get("add")
+            port = vmess_data.get("port")
         else:
-            parsed = urllib.parse.urlsplit(config_str)
-            host = parsed.hostname
-            port = parsed.port
-            
-            if not host or not port:
-                return None
-                
-            ping, ip, ip_ver = resolve_and_ping(host, port)
-            if not ping or ping >= 500:
-                return None
-                
-            flag, country, city = get_geo_info(ip)
-            remark = (
-                f"👉🆔@Goodbaye_filtering 📡{flag} {country} ®️{city}\n"
-                f"🅿️ping:{ping}ms ⚡{feature} | {proto.upper()} {ip_ver}"
-            )
-            encoded_remark = urllib.parse.quote(remark)
-            base_url = config_str.split("#")[0]
-            return f"{base_url}#{encoded_remark}"
-            
-    except Exception:
+            host, port = get_endpoint(config, protocol)
+
+        ping, ip, ip_version = resolve_and_ping(host, port)
+
+        if ping is None or ping >= 500:
+            return None
+
+        flag, country, city = get_geo_info(ip)
+        lowered_config = config.lower()
+
+        if "reality" in lowered_config:
+            feature = "Reality"
+        elif "ws" in lowered_config:
+            feature = "WS"
+        else:
+            feature = "TLS/TCP"
+
+        remark = (
+            f"👉🆔@Goodbaye_filtering "
+            f"📡{flag} {country} ®️{city}\n"
+            f"🅿️ping:{ping}ms ⚡{feature} | "
+            f"{protocol.upper()} {ip_version}"
+        )
+
+        if protocol == "vmess":
+            vmess_data["ps"] = remark
+            encoded = base64.b64encode(
+                json.dumps(
+                    vmess_data,
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).decode("ascii")
+
+            return f"vmess://{encoded}"
+
+        parsed = urllib.parse.urlsplit(config)
+        encoded_remark = urllib.parse.quote(remark, safe="")
+
+        return urllib.parse.urlunsplit(
+            parsed._replace(fragment=encoded_remark)
+        )
+
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        json.JSONDecodeError,
+        binascii.Error,
+    ):
         return None
 
+
 def send_telegram_file(file_path, healthy_count):
-    tz = pytz.timezone("Asia/Tehran")
-    now_tehran = datetime.now(tz)
-    jalali_date = jdatetime.datetime.fromgregorian(datetime=now_tehran).strftime("%Y/%m/%d")
-    tehran_time = now_tehran.strftime("%H:%M:%S")
+    if not BOT_TOKEN or not CHAT_ID:
+        raise RuntimeError(
+            "لطفاً Secretsهای BOT_TOKEN2 و CHAT_ID را در GitHub تنظیم کنید."
+        )
+
+    tehran_now = datetime.now(pytz.timezone("Asia/Tehran"))
+    jalali_date = jdatetime.datetime.fromgregorian(
+        datetime=tehran_now
+    ).strftime("%Y/%m/%d")
 
     caption = (
-        "🚀 مجموعه کانفیگ‌های تست‌شده و زنده (Goodbaye VIP) 📡 مناسب دوران اختلال، فیلترینگ و شبکه ملی\n\n"
-        f"📅 تاریخ شمسی: {jalali_date} ⏰ ساعت تهران: {tehran_time} 📊 شاخص کیفیت: VIP Strict (Ping < 500ms) "
-        f"🔢 تعداد کانفیگ سالم این فایل: {healthy_count}"
+        "🚀 مجموعه کانفیگ‌های تست‌شده و زنده (Goodbaye VIP) 📡\n\n"
+        f"📅 تاریخ شمسی: {jalali_date} "
+        f"⏰ ساعت تهران: {tehran_now:%H:%M:%S}\n"
+        "📊 شاخص کیفیت: VIP Strict (Ping < 500ms)\n"
+        f"🔢 تعداد کانفیگ سالم: {healthy_count}"
     )
 
     reply_markup = {
         "inline_keyboard": [
-            [{"text": "📢 کانال اصلی Goodbaye_filtering", "url": "https://t.me/Goodbaye_filtering"}],
-            [{"text": "⚡ کانال اختصاصی VIP", "url": "https://t.me/CONFIG_V2RAY_VIP"}],
-            [{"text": "🔒 کانال خصوصی", "url": "https://t.me/+m4GhEHGLd2k5ZjU0"}],
-            [{"text": "🔄 اشتراک‌گذاری با دوستان", "url": "https://t.me/share/url?url=https://t.me/Goodbaye_filtering"}]
+            [
+                {
+                    "text": "📢 کانال اصلی Goodbaye_filtering",
+                    "url": "https://t.me/Goodbaye_filtering",
+                }
+            ],
+            [
+                {
+                    "text": "⚡ کانال اختصاصی VIP",
+                    "url": "https://t.me/CONFIG_V2RAY_VIP",
+                }
+            ],
+            [
+                {
+                    "text": "🔒 کانال خصوصی",
+                    "url": "https://t.me/+m4GhEHGLd2k5ZjU0",
+                }
+            ],
+            [
+                {
+                    "text": "🔄 اشتراک‌گذاری با دوستان",
+                    "url": (
+                        "https://t.me/share/url"
+                        "?url=https://t.me/Goodbaye_filtering"
+                    ),
+                }
+            ],
         ]
     }
 
-    tg_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-    with open(file_path, "rb") as f:
-        payload = {
-            "chat_id": CHAT_ID,
-            "caption": caption,
-            "reply_markup": json.dumps(reply_markup)
-        }
-        files = {"document": f}
-        r = requests.post(tg_url, data=payload, files=files, timeout=30)
-        if r.status_code == 200:
-            print("🚀 [موفقیت] فایل نهایی با ۴ دکمه به کانال تلگرام ارسال شد!", flush=True)
-        else:
-            print(f"❌ خطا در ارسال تلگرام: {r.text}", flush=True)
+    telegram_url = (
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+    )
+
+    try:
+        with open(file_path, "rb") as document:
+            response = requests.post(
+                telegram_url,
+                data={
+                    "chat_id": CHAT_ID,
+                    "caption": caption,
+                    "reply_markup": json.dumps(reply_markup),
+                },
+                files={
+                    "document": (
+                        os.path.basename(file_path),
+                        document,
+                        "text/plain",
+                    )
+                },
+                timeout=30,
+            )
+
+        response.raise_for_status()
+        result = response.json()
+
+        if not result.get("ok"):
+            raise RuntimeError(
+                f"Telegram API خطا برگرداند: {result}"
+            )
+
+        print("✅ فایل با موفقیت به تلگرام ارسال شد.", flush=True)
+
+    except (requests.RequestException, ValueError) as error:
+        raise RuntimeError(
+            f"ارسال فایل به تلگرام ناموفق بود: {error}"
+        ) from error
+
 
 def main():
-    if not BOT_TOKEN or not CHAT_ID:
-        print("[!] خطای متغیرها: BOT_TOKEN2 یا CHAT_ID ست نشده است.", flush=True)
+    if not SOURCE_1:
+        raise RuntimeError(
+            "متغیر SOURCE_1 خالی است؛ آن را در GitHub Secrets تنظیم کنید."
+        )
+
+    configs = extract_configs_from_sources(SOURCE_1)
+
+    if not configs:
+        print(
+            "[!] هیچ کانفیگی از سورس‌ها دریافت نشد.",
+            flush=True,
+        )
         return
 
-    raw_configs = extract_configs_from_sources(SOURCE_1)
-    if not raw_configs:
-        print("[!] هیچ کانفیگی استخراج نشد.", flush=True)
-        return
+    print(
+        f"🔍 شروع بررسی {len(configs)} کانفیگ...",
+        flush=True,
+    )
 
-    print("⚡ در حال تست اتصال زنده و غربالگری پینگ (Ping < 500ms)...", flush=True)
-    healthy_configs = []
-    
-    with ThreadPoolExecutor(max_workers=35) as executor:
-        results = executor.map(parse_and_rebuild_config, raw_configs)
-        for res in results:
-            if res:
-                healthy_configs.append(res)
+    with ThreadPoolExecutor(max_workers=50) as executor:
+        results = executor.map(parse_and_rebuild_config, configs)
 
-    print(f"🎯 تعداد نهایی کانفیگ‌های زنده و سالم: {len(healthy_configs)} عدد", flush=True)
+    healthy_configs = [
+        result
+        for result in results
+        if result
+    ]
+
+    # Keep output deterministic and remove any duplicate rebuilt links.
+    healthy_configs = list(dict.fromkeys(healthy_configs))
+
+    print(
+        f"🎯 تعداد نهایی کانفیگ‌های زنده و سالم: "
+        f"{len(healthy_configs)} عدد",
+        flush=True,
+    )
 
     if not healthy_configs:
-        print("[!] هیچ کانفیگی شرط پینگ زیر ۵۰۰ میلی‌ثانیه را پاس نکرد.", flush=True)
-        return
+print("[!] هیچ کانفیگی شرط پینگ زیر ۵۰۰ میلی‌ثانیه را پاس نکرد.", flush=True)
+return
 
-    output_filename = "Goodbaye_filtering_VIP.txt"
-    with open(output_filename, "w", encoding="utf-8") as f:
-        f.write("\n".join(healthy_configs))
+output_filename = "Goodbaye_filtering_VIP.txt"
+with open(output_filename, "w", encoding="utf-8") as f:
+f.write("\n".join(healthy_configs))
 
-    send_telegram_file(output_filename, len(healthy_configs))
+send_telegram_file(output_filename, len(healthy_configs))
 
-if __name__ == "__main__":
-    main()
+if name == "main":
+main()
